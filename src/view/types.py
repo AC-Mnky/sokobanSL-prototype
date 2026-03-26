@@ -6,7 +6,7 @@ from typing import Generator, Literal
 
 import pygame
 
-from src.types import Action, Level, State, StaticState
+from src.types import Action, Coord, Level, State, StaticState
 
 Mode = Literal["select_level", "playing"]
 SolverStatus = Literal["idle", "running", "solved"]
@@ -22,6 +22,13 @@ class SolverSession:
 
 
 @dataclass(slots=True)
+class PreviewLayer:
+    state: State
+    color: int
+    source_coord: Coord
+
+
+@dataclass(slots=True)
 class AppCtx:
     mode: Mode = "select_level"
     levels_path: Path = Path("data/levels.pkl")
@@ -31,7 +38,7 @@ class AppCtx:
     runtime_state: State | None = None
     initial_state: State | None = None
     history_stack: list[State] = field(default_factory=list)
-    preview_stack: list[State] = field(default_factory=list)
+    preview_stack: list[PreviewLayer] = field(default_factory=list)
     level_cleared: bool = False
     solver_session: SolverSession = field(default_factory=SolverSession)
     running: bool = True

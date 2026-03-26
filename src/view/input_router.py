@@ -4,11 +4,11 @@ import pygame
 
 from src.core_step import apply_action
 from src.goals import is_goal
-from src.state_utils import clone_state, is_empty_value
+from src.state_utils import clone_state
 from src.types import Action
 from src.view.level_select import export_builtin_and_refresh, try_enter_level_by_click
-from src.view.preview import clear_preview, pop_preview, push_preview_if_data
-from src.view.render import build_viewport, preview_screen_to_world, screen_to_world
+from src.view.preview import clear_preview, pop_preview, push_preview_if_data, remove_preview_by_source, resolve_visible_mono
+from src.view.render import build_viewport, screen_to_world
 from src.view.solver_session import start_or_restart_solver, stop_solver
 from src.view.types import AppCtx
 
@@ -64,19 +64,21 @@ def _undo(ctx: AppCtx) -> None:
 def _handle_play_click(ctx: AppCtx, pos: tuple[int, int], surface: pygame.Surface) -> None:
     if ctx.runtime_state is None:
         return
-    p_coord = preview_screen_to_world(pos, surface, ctx.preview_stack)
-    if p_coord is not None and ctx.preview_stack:
-        top = ctx.preview_stack[-1]
-        if not push_preview_if_data(top, p_coord, ctx):
-            pop_preview(ctx)
-        return
-
     world_vp = build_viewport(surface, ctx.runtime_state)
     coord = screen_to_world(pos, world_vp)
     if coord is None:
         pop_preview(ctx)
         return
-    if not push_preview_if_data(ctx.runtime_state, coord, ctx):
+
+    if remove_preview_by_source(ctx, coord):
+        return
+
+    mono = resolve_visible_mono(ctx, coord)
+    if mono is None:
+        pop_preview(ctx)
+        return
+    source_holder = {coord: mono}
+    if not push_preview_if_data(source_holder, coord, ctx):
         pop_preview(ctx)
 
 

@@ -6,7 +6,7 @@ import pygame
 
 from src.types import Coord, State
 from src.view.level_select import compute_level_button_rects
-from src.view.types import AppCtx
+from src.view.types import AppCtx, PreviewLayer
 
 BG = (16, 18, 22)
 BG_CLEARED = (22, 24, 30)
@@ -33,6 +33,8 @@ class Viewport:
     min_y: int
     cell: int
     padding: int
+    offset_x: int = 0
+    offset_y: int = 0
 
 
 def _base_color_by_index(idx: int) -> tuple[int, int, int]:
@@ -83,7 +85,7 @@ def _state_bounds(state: State) -> tuple[int, int, int, int]:
     return (min(xs), min(ys), max(xs), max(ys))
 
 
-def build_viewport(surface: pygame.Surface, state: State, right_panel: int = 260) -> Viewport:
+def build_viewport(surface: pygame.Surface, state: State, right_panel: int = 0) -> Viewport:
     w, h = surface.get_size()
     rect = pygame.Rect(8, 8, max(100, w - right_panel - 16), h - 16)
     min_x, min_y, max_x, max_y = _state_bounds(state)
@@ -91,20 +93,34 @@ def build_viewport(surface: pygame.Surface, state: State, right_panel: int = 260
     world_w = max(1, (max_x - min_x + 1) + padding * 2)
     world_h = max(1, (max_y - min_y + 1) + padding * 2)
     cell = max(6, min(rect.width // world_w, rect.height // world_h))
-    return Viewport(rect=rect, min_x=min_x, min_y=min_y, cell=cell, padding=padding)
+    world_px_w = world_w * cell
+    world_px_h = world_h * cell
+    leftover_x = max(0, rect.width - world_px_w)
+    leftover_y = max(0, rect.height - world_px_h)
+    offset_x = leftover_x // 2
+    offset_y = leftover_y // 2
+    return Viewport(
+        rect=rect,
+        min_x=min_x,
+        min_y=min_y,
+        cell=cell,
+        padding=padding,
+        offset_x=offset_x,
+        offset_y=offset_y,
+    )
 
 
 def world_to_screen(coord: Coord, vp: Viewport) -> pygame.Rect:
-    x = vp.rect.x + (coord[0] - vp.min_x + vp.padding) * vp.cell
-    y = vp.rect.y + (coord[1] - vp.min_y + vp.padding) * vp.cell
+    x = vp.rect.x + vp.offset_x + (coord[0] - vp.min_x + vp.padding) * vp.cell
+    y = vp.rect.y + vp.offset_y + (coord[1] - vp.min_y + vp.padding) * vp.cell
     return pygame.Rect(x, y, vp.cell, vp.cell)
 
 
 def screen_to_world(pos: tuple[int, int], vp: Viewport) -> Coord | None:
     if not vp.rect.collidepoint(pos):
         return None
-    gx = (pos[0] - vp.rect.x) // vp.cell + vp.min_x - vp.padding
-    gy = (pos[1] - vp.rect.y) // vp.cell + vp.min_y - vp.padding
+    gx = (pos[0] - (vp.rect.x + vp.offset_x)) // vp.cell + vp.min_x - vp.padding
+    gy = (pos[1] - (vp.rect.y + vp.offset_y)) // vp.cell + vp.min_y - vp.padding
     return (int(gx), int(gy))
 
 
@@ -132,6 +148,23 @@ def _draw_world(surface: pygame.Surface, state: State, vp: Viewport) -> None:
             _draw_hollow_eyes(surface, rect)
 
 
+def _draw_buttons_under_objects(surface: pygame.Surface, ctx: AppCtx, vp: Viewport) -> None:
+    if ctx.static_state is None:
+        return
+    for coord, buttons in ctx.static_state.buttons.items():
+        rect = world_to_screen(coord, vp)
+        if not buttons:
+            continue
+        n = len(buttons)
+        slot_w = max(1, rect.width // n)
+        total_w = slot_w * n
+        start_x = rect.x + (rect.width - total_w) // 2
+        for i, b in enumerate(buttons):
+            slot = pygame.Rect(start_x + i * slot_w, rect.y, slot_w, rect.height)
+            color = _scale_color(_base_color_by_index(b.color), 1.05)
+            _draw_button_glyph(surface, slot, b.button_type.upper(), color)
+
+
 def _draw_disk_region_overlay(surface: pygame.Surface, state: State, vp: Viewport) -> None:
     alpha_surface = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
     for mono in state.values():
@@ -155,18 +188,6 @@ def _draw_overlay(surface: pygame.Surface, ctx: AppCtx, vp: Viewport, font: pyga
         pygame.draw.rect(surface, t_color, rect, 2)
         if target.required_is_controllable:
             _draw_solid_eyes(surface, rect, t_color)
-    for coord, buttons in ctx.static_state.buttons.items():
-        rect = world_to_screen(coord, vp)
-        if not buttons:
-            continue
-        n = len(buttons)
-        slot_w = max(1, rect.width // n)
-        total_w = slot_w * n
-        start_x = rect.x + (rect.width - total_w) // 2
-        for i, b in enumerate(buttons):
-            slot = pygame.Rect(start_x + i * slot_w, rect.y, slot_w, rect.height)
-            color = _scale_color(_base_color_by_index(b.color), 1.05)
-            _draw_button_glyph(surface, slot, b.button_type.upper(), color)
 
 
 def _draw_button_glyph(
@@ -198,33 +219,70 @@ def _draw_button_glyph(
     pygame.draw.line(surface, color, (x1, y1), (x0, y1), stroke)
 
 
-def preview_panel_rect(surface: pygame.Surface) -> pygame.Rect:
-    w, h = surface.get_size()
-    return pygame.Rect(w - 244, 8, 236, h - 16)
+def _draw_preview_over_map(surface: pygame.Surface, preview_stack: list[PreviewLayer], vp: Viewport) -> None:
+    for layer in preview_stack:
+        mat_color = _scale_color(_base_color_by_index(layer.color), 0.35)
+        expand = max(1, int(round(vp.cell * 0.2)))  # 0.1 grid per side
+        for coord in layer.state.keys():
+            base_rect = world_to_screen(coord, vp)
+            material = base_rect.inflate(expand, expand)
+            pygame.draw.rect(surface, mat_color, material)
+        _draw_world(surface, layer.state, vp)
+        # Explicit None in preview state should be rendered as '?'.
+        q_color = _scale_color(_base_color_by_index(layer.color), 1.0)
+        for coord, mono in layer.state.items():
+            if mono is not None:
+                continue
+            rect = world_to_screen(coord, vp)
+            _draw_question(surface, rect, q_color)
 
 
-def _draw_preview(surface: pygame.Surface, preview_stack: list[State]) -> None:
-    panel = preview_panel_rect(surface)
-    pygame.draw.rect(surface, (24, 26, 34), panel)
-    pygame.draw.rect(surface, GRID, panel, 1)
-    if not preview_stack:
+def _draw_question(surface: pygame.Surface, rect: pygame.Rect, color: tuple[int, int, int]) -> None:
+    # Draw '?' as a tiny 7x9 bitmap.
+    # Matches the requested shape:
+    # 0000000
+    # 0111110
+    # 0100010
+    # 0000010
+    # 0001110
+    # 0001000
+    # 0000000
+    # 0001000
+    # 0000000
+    rows = [
+        "0000000",
+        "0111110",
+        "0100010",
+        "0000010",
+        "0001110",
+        "0001000",
+        "0000000",
+        "0001000",
+        "0000000",
+    ]
+    h = len(rows)
+    w = len(rows[0]) if h else 0
+    if w == 0 or h == 0:
         return
-    top = preview_stack[-1]
-    sub = surface.subsurface(panel)
-    vp = build_viewport(sub, top, right_panel=0)
-    _draw_world(sub, top, vp)
 
+    px = max(1, rect.width // w)
+    py = max(1, rect.height // h)
+    total_w = w * px
+    total_h = h * py
+    ox = rect.x + (rect.width - total_w) // 2
+    oy = rect.y + (rect.height - total_h) // 2
+    pad_x = max(0, px // 5)
+    pad_y = max(0, py // 5)
+    cell_w = max(1, px - pad_x * 2)
+    cell_h = max(1, py - pad_y * 2)
 
-def preview_screen_to_world(pos: tuple[int, int], surface: pygame.Surface, preview_stack: list[State]) -> Coord | None:
-    panel = preview_panel_rect(surface)
-    if not panel.collidepoint(pos):
-        return None
-    if not preview_stack:
-        return None
-    local = (pos[0] - panel.x, pos[1] - panel.y)
-    fake = pygame.Surface((panel.width, panel.height))
-    vp = build_viewport(fake, preview_stack[-1], right_panel=0)
-    return screen_to_world(local, vp)
+    for r in range(h):
+        for c in range(w):
+            if rows[r][c] != "1":
+                continue
+            x = ox + c * px + pad_x
+            y = oy + r * py + pad_y
+            pygame.draw.rect(surface, color, pygame.Rect(x, y, cell_w, cell_h))
 
 
 def render_frame(surface: pygame.Surface, ctx: AppCtx, font: pygame.font.Font) -> None:
@@ -244,10 +302,16 @@ def render_frame(surface: pygame.Surface, ctx: AppCtx, font: pygame.font.Font) -
     if ctx.runtime_state is None:
         return
     vp = build_viewport(surface, ctx.runtime_state)
+    # 1) grid
+    _draw_world(surface, {}, vp)
+    # 2) SL buttons under objects
+    _draw_buttons_under_objects(surface, ctx, vp)
+    # 3) objects on top
     _draw_world(surface, ctx.runtime_state, vp)
     _draw_disk_region_overlay(surface, ctx.runtime_state, vp)
+    _draw_preview_over_map(surface, ctx.preview_stack, vp)
+    # 4) targets/eyes above objects
     _draw_overlay(surface, ctx, vp, font)
-    _draw_preview(surface, ctx.preview_stack)
 
     y = 10
     for text in (
