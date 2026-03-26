@@ -21,7 +21,8 @@ def test_movement_generates_none_outside_map():
     state = {(0, 0): player()}
     next_state = apply_action(state, (1, 0), static_state)
     assert next_state[(1, 0)] is not None
-    assert next_state[(0, 0)] is None
+    assert next_state[(0, 0)] is not None
+    assert next_state[(0, 0)].is_empty
 
 
 def test_edge_event_uses_is_empty_only():

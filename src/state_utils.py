@@ -73,6 +73,16 @@ def ensure_coord_none(state: State, coord: Coord) -> None:
         state[coord] = None
 
 
+def air_mono() -> MonoData:
+    # Runtime "empty" is represented as MonoData(is_empty=True), not None.
+    return MonoData(is_empty=True, is_wall=False, is_controllable=False, color=0, data=None)
+
+
+def ensure_coord_air(state: State, coord: Coord) -> None:
+    if coord not in state or state[coord] is None:
+        state[coord] = air_mono()
+
+
 def is_empty_value(mono: Optional[MonoData]) -> bool:
     return mono is None or mono.is_empty
 

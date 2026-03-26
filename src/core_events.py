@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from src.core_write_commit import commit_writes
-from src.state_utils import clone_mono, clone_state, is_empty_value
+from src.state_utils import air_mono, clone_mono, clone_state, is_empty_value
 from src.types import ButtonData, Event, MonoData, State, StaticState
 
 
@@ -30,7 +30,11 @@ def _disk_coords_by_color(state: State, color: int) -> list[tuple[int, int]]:
 def _snapshot_from_disk_region(world: State, disk_data: State) -> State:
     snapshot: State = {}
     for coord in disk_data.keys():
-        snapshot[coord] = clone_mono(world.get(coord))
+        mono = world.get(coord)
+        if mono is None:
+            snapshot[coord] = air_mono()
+        else:
+            snapshot[coord] = clone_mono(mono)
     return snapshot
 
 
