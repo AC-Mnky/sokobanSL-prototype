@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from src.state_utils import clone_state, ensure_coord_none, mono_deep_equal
+from src.state_utils import ensure_coord_none, mono_deep_equal
 from src.types import Coord, MonoData, State
 
 
 def commit_writes(state: State, writes: list[State]) -> State:
-    next_state = clone_state(state) or {}
+    next_state = dict(state)
     per_coord: dict[Coord, list[MonoData]] = defaultdict(list)
 
     for write in writes:

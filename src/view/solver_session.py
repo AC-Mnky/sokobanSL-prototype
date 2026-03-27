@@ -19,7 +19,7 @@ def start_or_restart_solver(ctx: AppCtx) -> None:
         clone_state(ctx.runtime_state) or {},
         ctx.static_state,
         is_goal,
-        step_chunk=128,
+        step_chunk=256,
     )
     ctx.solver_session.status = "running"
     ctx.solver_session.steps = 0

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from src.core_write_commit import commit_writes
-from src.state_utils import air_mono, clone_mono, clone_state, is_empty_value
+from src.state_utils import air_mono, clone_mono, is_empty_value
 from src.types import ButtonData, Event, MonoData, State, StaticState
 
 
@@ -68,8 +68,8 @@ def build_event_writes(state: State, events: list[Event], static_state: StaticSt
 
 
 def run_event_cycle(prev_state: State, curr_state: State, static_state: StaticState) -> State:
-    old_state = clone_state(prev_state) or {}
-    now_state = clone_state(curr_state) or {}
+    old_state = prev_state
+    now_state = curr_state
     pending = collect_edge_events(old_state, now_state, static_state)
     while pending:
         writes = build_event_writes(now_state, pending, static_state)
