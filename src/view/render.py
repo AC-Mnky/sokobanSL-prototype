@@ -4,9 +4,9 @@ from dataclasses import dataclass
 
 import pygame
 
-from src.types import Coord, State
+from src.types import Coord, MonoData, State
 from src.view.level_select import compute_level_button_rects
-from src.view.types import AppCtx, PreviewLayer
+from src.view.types import AppCtx, EditorPaletteItem, PreviewLayer
 
 BG = (16, 18, 22)
 BG_CLEARED = (22, 24, 30)
@@ -14,6 +14,9 @@ GRID = (40, 44, 52)
 TXT = (220, 220, 220)
 TXT_SOLVED = (90, 210, 120)
 TXT_NO_SOLUTION = (235, 80, 80)
+PANEL_BG = (26, 30, 38)
+PANEL_LINE = (65, 70, 82)
+EDITOR_RIGHT_PANEL = 280
 BASE_PALETTE: list[tuple[int, int, int]] = [
     (240, 240, 240),  # 0 white
     (235, 80, 80),    # 1 red
@@ -287,6 +290,149 @@ def _draw_question(surface: pygame.Surface, rect: pygame.Rect, color: tuple[int,
             pygame.draw.rect(surface, color, pygame.Rect(x, y, cell_w, cell_h))
 
 
+def _collect_editor_colors(ctx: AppCtx) -> list[int]:
+    colors: set[int] = set()
+    if ctx.runtime_state is not None:
+        for mono in ctx.runtime_state.values():
+            if mono is None or mono.is_empty:
+                continue
+            colors.add(max(1, mono.color))
+    if ctx.static_state is not None:
+        for target in ctx.static_state.targets.values():
+            colors.add(max(1, target.required_color))
+        for buttons in ctx.static_state.buttons.values():
+            for b in buttons:
+                colors.add(max(1, b.color))
+    ordered = sorted(c for c in colors if c > 0)
+    nxt = 1
+    while nxt in colors:
+        nxt += 1
+    ordered.append(nxt)
+    return ordered or [1]
+
+
+def _draw_palette_item(surface: pygame.Surface, item: EditorPaletteItem, font: pygame.font.Font) -> None:
+    if item.rect is None:
+        return
+    rect = item.rect
+    pygame.draw.rect(surface, (44, 50, 62), rect)
+    pygame.draw.rect(surface, PANEL_LINE, rect, 1)
+    icon_size = max(14, min(rect.width - 10, rect.height - 24))
+    icon = pygame.Rect(0, 0, icon_size, icon_size)
+    icon.centerx = rect.centerx
+    icon.top = rect.top + 5
+    _draw_editor_icon(surface, icon, item.kind, item.color)
+    label = font.render(item.label, True, TXT)
+    label_x = rect.centerx - label.get_width() // 2
+    surface.blit(label, (label_x, rect.bottom - 17))
+
+
+def _build_editor_palette(ctx: AppCtx) -> list[EditorPaletteItem]:
+    colors = _collect_editor_colors(ctx)
+    items: list[EditorPaletteItem] = [
+        EditorPaletteItem(key="air", label="Air", kind="air", color=0),
+        EditorPaletteItem(key="wall", label="Wall", kind="wall", color=0),
+        EditorPaletteItem(key="player", label="Player", kind="player", color=0),
+        EditorPaletteItem(key="box", label="Box", kind="box", color=0),
+    ]
+    for c in colors:
+        items.append(EditorPaletteItem(key=f"s_{c}", label=f"S c{c}", kind="s_button", color=c))
+        items.append(EditorPaletteItem(key=f"l_{c}", label=f"L c{c}", kind="l_button", color=c))
+    items.append(EditorPaletteItem(key="target_player", label="PTarget", kind="player_target", color=0))
+    items.append(EditorPaletteItem(key="target_box", label="BTarget", kind="box_target", color=0))
+    return items
+
+
+def _draw_editor_icon(
+    surface: pygame.Surface,
+    rect: pygame.Rect,
+    kind: str,
+    color_idx: int,
+) -> None:
+    color = _base_color_by_index(color_idx)
+    if kind == "air":
+        pygame.draw.rect(surface, (90, 95, 108), rect, 1)
+    elif kind == "wall":
+        pygame.draw.rect(surface, _scale_color(color, 0.45), rect)
+    elif kind == "player":
+        pygame.draw.rect(surface, color, rect)
+        _draw_hollow_eyes(surface, rect)
+    elif kind == "box":
+        pygame.draw.rect(surface, _scale_color(color, 0.78), rect)
+    elif kind == "s_button":
+        _draw_button_glyph(surface, rect, "S", color)
+    elif kind == "l_button":
+        _draw_button_glyph(surface, rect, "L", color)
+    elif kind == "player_target":
+        pygame.draw.rect(surface, color, rect, 2)
+        _draw_solid_eyes(surface, rect, color)
+    elif kind == "box_target":
+        pygame.draw.rect(surface, color, rect, 2)
+
+
+def _draw_editor_panel(surface: pygame.Surface, ctx: AppCtx, font: pygame.font.Font, right_panel: int) -> None:
+    panel = pygame.Rect(surface.get_width() - right_panel, 0, right_panel, surface.get_height())
+    pygame.draw.rect(surface, PANEL_BG, panel)
+    pygame.draw.line(surface, PANEL_LINE, (panel.left, panel.top), (panel.left, panel.bottom), 1)
+    items = _build_editor_palette(ctx)
+    margin = 10
+    top = 40
+    gap = 6
+    cols = 2
+    width = panel.width - margin * 2
+    cell_w = (width - gap * (cols - 1)) // cols
+    cell_h = 56
+    rows = (len(items) + cols - 1) // cols
+    content_h = top + max(0, rows * (cell_h + gap) - gap) + 10
+    ctx.editor_panel_scroll_max = max(0, content_h - panel.height)
+    ctx.editor_panel_scroll = max(0, min(ctx.editor_panel_scroll, ctx.editor_panel_scroll_max))
+    for idx, item in enumerate(items):
+        row = idx // cols
+        col = idx % cols
+        x = panel.left + margin + col * (cell_w + gap)
+        y = top + row * (cell_h + gap) - ctx.editor_panel_scroll
+        item.rect = pygame.Rect(x, y, cell_w, cell_h)
+        if item.rect.bottom >= panel.top and item.rect.top <= panel.bottom:
+            _draw_palette_item(surface, item, font)
+    ctx.editor_palette_items = items
+    title = font.render("Editor Palette", True, TXT)
+    surface.blit(title, (panel.left + 10, 12))
+
+
+def _draw_drag_preview(surface: pygame.Surface, ctx: AppCtx) -> None:
+    payload = ctx.drag_session.payload
+    if not ctx.editor_mode or payload is None:
+        return
+    if ctx.runtime_state is None:
+        return
+    vp = build_viewport(surface, ctx.runtime_state, right_panel=EDITOR_RIGHT_PANEL)
+    mx, my = pygame.mouse.get_pos()
+    center_x = mx + ctx.drag_session.drag_offset[0]
+    center_y = my + ctx.drag_session.drag_offset[1]
+    size = max(6, vp.cell)
+    rect = pygame.Rect(center_x - size // 2, center_y - size // 2, size, size)
+    preview = pygame.Surface((size, size), pygame.SRCALPHA)
+    local_rect = pygame.Rect(0, 0, size, size)
+    if payload.kind == "state" and payload.state_mono is not None:
+        mono: MonoData = payload.state_mono
+        if mono.is_wall:
+            _draw_editor_icon(preview, local_rect, "wall", mono.color)
+        elif mono.is_controllable:
+            _draw_editor_icon(preview, local_rect, "player", mono.color)
+        else:
+            _draw_editor_icon(preview, local_rect, "box", mono.color)
+    elif payload.kind == "buttons" and payload.buttons:
+        first = payload.buttons[0]
+        _draw_editor_icon(preview, local_rect, "s_button" if first.button_type == "s" else "l_button", first.color)
+    elif payload.kind == "target" and payload.target is not None:
+        kind = "player_target" if payload.target.required_is_controllable else "box_target"
+        _draw_editor_icon(preview, local_rect, kind, payload.target.required_color)
+    elif payload.kind == "palette" and payload.palette_kind is not None:
+        _draw_editor_icon(preview, local_rect, payload.palette_kind, payload.palette_color)
+    preview.set_alpha(128)
+    surface.blit(preview, rect.topleft)
+
+
 def render_frame(surface: pygame.Surface, ctx: AppCtx, font: pygame.font.Font) -> None:
     surface.fill(BG_CLEARED if (ctx.mode == "playing" and ctx.level_cleared) else BG)
     if ctx.mode == "select_level":
@@ -303,7 +449,8 @@ def render_frame(surface: pygame.Surface, ctx: AppCtx, font: pygame.font.Font) -
 
     if ctx.runtime_state is None:
         return
-    vp = build_viewport(surface, ctx.runtime_state)
+    right_panel = EDITOR_RIGHT_PANEL if ctx.editor_mode else 0
+    vp = build_viewport(surface, ctx.runtime_state, right_panel=right_panel)
     # 1) grid
     _draw_world(surface, {}, vp)
     # 2) SL buttons under objects
@@ -314,6 +461,11 @@ def render_frame(surface: pygame.Surface, ctx: AppCtx, font: pygame.font.Font) -
     _draw_preview_over_map(surface, ctx.preview_stack, vp)
     # 4) targets/eyes above objects
     _draw_overlay(surface, ctx, vp, font)
+    if ctx.editor_mode:
+        _draw_editor_panel(surface, ctx, font, right_panel)
+        _draw_drag_preview(surface, ctx)
+    else:
+        ctx.editor_palette_items = []
 
     solver_color = TXT
     if ctx.solver_session.status == "solved":
@@ -322,12 +474,12 @@ def render_frame(surface: pygame.Surface, ctx: AppCtx, font: pygame.font.Font) -
         solver_color = TXT_NO_SOLUTION
 
     lines = [
-        ("Q:back WASD/Arrows:move R:reset Z:undo H:solver", TXT),
+        ("Q:back WASD/Arrows:move R:reset Z:undo H:solver L:editor Ctrl+S:save", TXT),
         (
             f"solver={ctx.solver_session.status} steps={ctx.solver_session.steps} searched={ctx.solver_session.searched_state_count} time={ctx.solver_session.elapsed_seconds:.3f}s",
             solver_color,
         ),
-        (f"preview_depth={len(ctx.preview_stack)} history={len(ctx.history_stack)}", TXT),
+        (f"editor={'on' if ctx.editor_mode else 'off'} preview_depth={len(ctx.preview_stack)} history={len(ctx.history_stack)}", TXT),
     ]
     y = 10
     for text, color in lines:

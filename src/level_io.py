@@ -27,3 +27,14 @@ def export_builtin_levels(path: str | Path) -> list[Level]:
     levels = make_basic_levels()
     save_levels(path, levels)
     return levels
+
+
+def save_level_by_index(path: str | Path, index: int, level: Level) -> bool:
+    if index < 0:
+        return False
+    levels = load_levels(path)
+    if index >= len(levels):
+        return False
+    levels[index] = level
+    save_levels(path, levels)
+    return True

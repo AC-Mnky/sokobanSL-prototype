@@ -1,4 +1,4 @@
-from src.core_events import collect_edge_events
+from src.core_events import build_event_writes, collect_edge_events
 from src.core_step import apply_action
 from src.core_write_commit import commit_writes
 from src.types import ButtonData, MonoData, StaticState, TargetData
@@ -45,3 +45,16 @@ def test_write_conflict_majority_and_tie():
     d = {(0, 0): box(3)}
     out2 = commit_writes(state, [a, d])
     assert out2[(0, 0)] is not None and out2[(0, 0)].color == 9
+
+
+def test_s_disk_snapshot_keeps_old_when_world_is_none():
+    old = box(7)
+    disk = MonoData(is_empty=False, is_wall=False, is_controllable=False, color=1, data={(1, 1): old})
+    state = {(0, 0): disk}
+    events = [ButtonData("s", 1)]
+    writes = build_event_writes(state, events, StaticState(targets={}, buttons={}))
+    assert len(writes) == 1
+    new_disk = writes[0].get((0, 0))
+    assert new_disk is not None and new_disk.data is not None
+    assert new_disk.data.get((1, 1)) is not None
+    assert new_disk.data[(1, 1)].color == 7

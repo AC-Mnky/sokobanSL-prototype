@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from src.core_write_commit import commit_writes
-from src.state_utils import air_mono, clone_mono, is_empty_value
+from src.state_utils import clone_mono, is_empty_value
 from src.types import ButtonData, Event, MonoData, State, StaticState
 
 
@@ -32,7 +32,8 @@ def _snapshot_from_disk_region(world: State, disk_data: State) -> State:
     for coord in disk_data.keys():
         mono = world.get(coord)
         if mono is None:
-            snapshot[coord] = air_mono()
+            # Keep previous disk record when world has no cell.
+            snapshot[coord] = clone_mono(disk_data.get(coord))
         else:
             snapshot[coord] = clone_mono(mono)
     return snapshot

@@ -6,7 +6,7 @@ import pygame
 
 from src.goals import is_goal
 from src.level_io import export_builtin_levels, load_levels
-from src.state_utils import clone_state
+from src.state_utils import clone_state, clone_static_state
 from src.view.types import AppCtx
 
 
@@ -46,11 +46,12 @@ def try_enter_level_by_click(ctx: AppCtx, pos: tuple[int, int], surface: pygame.
         if rect.collidepoint(pos):
             lvl = ctx.levels[i]
             ctx.current_level_idx = i
-            ctx.static_state = lvl.static_state
+            ctx.static_state = clone_static_state(lvl.static_state)
             ctx.initial_state = clone_state(lvl.initial_state) or {}
             ctx.runtime_state = clone_state(lvl.initial_state) or {}
             ctx.history_stack.clear()
             ctx.preview_stack.clear()
+            ctx.editor_mode = False
             ctx.level_cleared = is_goal(ctx.runtime_state, ctx.static_state)
             ctx.solver_session = type(ctx.solver_session)()
             ctx.mode = "playing"

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Hashable, Optional
 
-from src.types import Coord, MonoData, State
+from src.types import ButtonData, Coord, MonoData, State, StaticState, TargetData
 
 
 def clone_mono(mono: Optional[MonoData]) -> Optional[MonoData]:
@@ -22,6 +22,24 @@ def clone_state(state: Optional[State]) -> Optional[State]:
     if state is None:
         return None
     return {coord: clone_mono(mono) for coord, mono in state.items()}
+
+
+def clone_static_state(static_state: Optional[StaticState]) -> Optional[StaticState]:
+    if static_state is None:
+        return None
+    return StaticState(
+        targets={
+            coord: TargetData(
+                required_is_controllable=target.required_is_controllable,
+                required_color=target.required_color,
+            )
+            for coord, target in static_state.targets.items()
+        },
+        buttons={
+            coord: [ButtonData(button_type=b.button_type, color=b.color) for b in buttons]
+            for coord, buttons in static_state.buttons.items()
+        },
+    )
 
 
 def mono_deep_equal(a: Optional[MonoData], b: Optional[MonoData]) -> bool:

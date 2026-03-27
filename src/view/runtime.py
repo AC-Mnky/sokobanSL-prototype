@@ -22,9 +22,7 @@ def run_app(ctx: AppCtx) -> None:
     while ctx.running:
         moved_this_frame = False
         for event in pygame.event.get():
-            before = len(ctx.history_stack)
-            handle_event(ctx, event, surface)
-            moved_this_frame = moved_this_frame or (len(ctx.history_stack) != before)
+            moved_this_frame = handle_event(ctx, event, surface) or moved_this_frame
 
         if ctx.mode == "playing" and not moved_this_frame:
             advance_solver_once(ctx)
