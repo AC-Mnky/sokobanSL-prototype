@@ -57,6 +57,8 @@ def solve(
 
         for action in VALID_ACTIONS:
             next_state = apply_action(state, action, static_state)
+            if next_state is state:
+                continue
             frozen = freeze_state(next_state)
             if frozen in visited:
                 continue

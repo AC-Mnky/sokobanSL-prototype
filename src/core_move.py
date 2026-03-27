@@ -17,9 +17,7 @@ def _can_push_through_chain(state: State, start: Coord, action: Action) -> bool:
 
 def apply_movement(state: State, action: Action) -> State:
     if action not in VALID_ACTIONS:
-        return dict(state)
-
-    next_state = dict(state)
+        return state
     controllables = [
         coord
         for coord, mono in state.items()
@@ -40,7 +38,7 @@ def apply_movement(state: State, action: Action) -> State:
                 cur = step_coord(cur, action)
 
     if not movers:
-        return next_state
+        return state
 
     moving_values: dict[Coord, MonoData] = {}
     for src in movers:
@@ -48,6 +46,7 @@ def apply_movement(state: State, action: Action) -> State:
         if mono is not None and not mono.is_empty:
             moving_values[src] = mono
 
+    next_state = dict(state)
     for src in moving_values:
         next_state[src] = air_mono()
 

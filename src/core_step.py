@@ -7,4 +7,6 @@ from src.types import Action, State, StaticState
 
 def apply_action(state: State, action: Action, static_state: StaticState) -> State:
     moved = apply_movement(state, action)
+    if moved is state:
+        return state
     return run_event_cycle(state, moved, static_state)
