@@ -497,3 +497,5 @@ def render_frame(surface: pygame.Surface, ctx: AppCtx, font: pygame.font.Font) -
     for text, color in lines:
         surface.blit(font.render(text, True, color), (12, y))
         y += 20
+    if ctx.level_saved:
+        surface.blit(font.render("Level Saved", True, TXT), (12, y))

@@ -48,6 +48,7 @@ def try_enter_level_by_click(ctx: AppCtx, pos: tuple[int, int], surface: pygame.
         if rect.collidepoint(pos):
             lvl = ctx.levels[i]
             ctx.current_level_idx = i
+            ctx.level_saved = False
             ctx.static_state = clone_static_state(lvl.static_state)
             ctx.initial_state = clone_state(lvl.initial_state) or {}
             ctx.runtime_state = clone_state(lvl.initial_state) or {}

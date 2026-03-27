@@ -73,6 +73,7 @@ class AppCtx:
     history_stack: list[tuple[State, StaticState]] = field(default_factory=list)
     preview_stack: list[PreviewLayer] = field(default_factory=list)
     level_cleared: bool = False
+    level_saved: bool = False
     solver_session: SolverSession = field(default_factory=SolverSession)
     editor_mode: bool = False
     drag_session: DragSession = field(default_factory=DragSession)

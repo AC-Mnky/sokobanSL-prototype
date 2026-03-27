@@ -34,9 +34,14 @@ def _refresh_level_cleared(ctx: AppCtx) -> None:
     ctx.level_cleared = is_goal(ctx.runtime_state, ctx.static_state)
 
 
+def _clear_level_saved(ctx: AppCtx) -> None:
+    ctx.level_saved = False
+
+
 def _apply_substantive_action(ctx: AppCtx, action: Action) -> None:
     if ctx.runtime_state is None or ctx.static_state is None:
         return
+    _clear_level_saved(ctx)
     ctx.history_stack.append((clone_state(ctx.runtime_state) or {}, clone_static_state(ctx.static_state) or ctx.static_state))
     ctx.runtime_state = apply_action(ctx.runtime_state, action, ctx.static_state)
     clear_preview(ctx)
@@ -47,6 +52,7 @@ def _apply_substantive_action(ctx: AppCtx, action: Action) -> None:
 def _reset_level(ctx: AppCtx) -> None:
     if ctx.runtime_state is None or ctx.initial_state is None or ctx.static_state is None:
         return
+    _clear_level_saved(ctx)
     ctx.history_stack.append((clone_state(ctx.runtime_state) or {}, clone_static_state(ctx.static_state) or ctx.static_state))
     ctx.runtime_state = clone_state(ctx.initial_state) or {}
     clear_preview(ctx)
@@ -57,6 +63,7 @@ def _reset_level(ctx: AppCtx) -> None:
 def _undo(ctx: AppCtx) -> None:
     if not ctx.history_stack:
         return
+    _clear_level_saved(ctx)
     state, static_state = ctx.history_stack.pop()
     ctx.runtime_state = state
     ctx.static_state = static_state
@@ -246,6 +253,7 @@ def _toggle_none_in_top_preview(ctx: AppCtx, pos: tuple[int, int], surface: pyga
     else:
         top.state[coord] = None
     _commit_preview_chain(ctx)
+    _clear_level_saved(ctx)
     ctx.history_stack.append((old_state, old_static))
     stop_solver(ctx)
     _refresh_level_cleared(ctx)
@@ -327,6 +335,7 @@ def _apply_editor_drop(ctx: AppCtx, pos: tuple[int, int], surface: pygame.Surfac
         changed = True
 
     if changed:
+        _clear_level_saved(ctx)
         ctx.history_stack.append((old_state, old_static))
         clear_preview(ctx)
         stop_solver(ctx)
@@ -344,6 +353,7 @@ def _save_current_level(ctx: AppCtx) -> None:
     if save_level_by_index(ctx.levels_path, ctx.current_level_idx, level):
         if 0 <= ctx.current_level_idx < len(ctx.levels):
             ctx.levels[ctx.current_level_idx] = level
+        ctx.level_saved = True
 
 
 def handle_event(ctx: AppCtx, event: pygame.event.Event, surface: pygame.Surface) -> bool:
