@@ -3,6 +3,7 @@ import pygame
 from src.level_io import save_levels
 from src.types import ButtonData, Level, MonoData, StaticState, TargetData
 from src.view.input_router import _apply_editor_drop, _begin_mouse_session, handle_event
+from src.view.preview import push_preview_if_data
 from src.view.render import _collect_editor_colors, build_viewport, world_to_screen
 from src.view.types import AppCtx, DragPayload, PreviewLayer
 
@@ -251,3 +252,47 @@ def test_right_click_toggles_none_in_top_preview_and_commits():
     changed_remove = handle_event(ctx, e_remove, surface)
     assert changed_remove
     assert (0, 0) not in ctx.preview_stack[-1].state
+
+
+def test_clicking_same_disk_preview_removes_existing_layer():
+    ctx = AppCtx(
+        mode="playing",
+        static_state=StaticState(targets={}, buttons={}),
+        runtime_state={},
+        initial_state={},
+    )
+    disk = MonoData(is_empty=False, is_wall=False, is_controllable=False, color=3, data={(1, 0): None})
+    root_state = {(0, 0): disk}
+    pushed = push_preview_if_data(disk, (0, 0), id(root_state), ctx)
+    assert pushed
+    assert len(ctx.preview_stack) == 1
+    # Clicking the same disk again should remove its existing preview layer.
+    pushed_again = push_preview_if_data(disk, (0, 0), id(root_state), ctx)
+    assert pushed_again
+    assert len(ctx.preview_stack) == 0
+
+
+def test_nested_same_coord_disk_opens_nested_preview_not_remove_parent():
+    ctx = AppCtx(
+        mode="playing",
+        static_state=StaticState(targets={}, buttons={}),
+        runtime_state={},
+        initial_state={},
+    )
+    disk_b = MonoData(is_empty=False, is_wall=False, is_controllable=False, color=2, data={(1, 0): None})
+    disk_a = MonoData(is_empty=False, is_wall=False, is_controllable=False, color=1, data={(0, 0): disk_b})
+    root_state = {(0, 0): disk_a}
+
+    opened_a = push_preview_if_data(disk_a, (0, 0), id(root_state), ctx)
+    assert opened_a
+    assert len(ctx.preview_stack) == 1
+
+    opened_b = push_preview_if_data(disk_b, (0, 0), id(ctx.preview_stack[-1].state), ctx)
+    assert opened_b
+    assert len(ctx.preview_stack) == 2
+
+    # Clicking B again should only close B, keeping A opened.
+    toggled_b = push_preview_if_data(disk_b, (0, 0), id(ctx.preview_stack[0].state), ctx)
+    assert toggled_b
+    assert len(ctx.preview_stack) == 1
+    assert ctx.preview_stack[0].source_coord == (0, 0)

@@ -27,6 +27,7 @@ class PreviewLayer:
     state: State
     color: int
     source_coord: Coord
+    source_container_id: int = 0
 
 
 @dataclass(slots=True)

@@ -88,7 +88,7 @@ def _handle_play_click(ctx: AppCtx, pos: tuple[int, int], surface: pygame.Surfac
         top_mono = layer.state.get(coord)
         if top_mono is None or top_mono.is_empty:
             return
-        if not push_preview_if_data({coord: top_mono}, coord, ctx):
+        if not push_preview_if_data(top_mono, coord, id(layer.state), ctx):
             pop_preview(ctx)
         return
 
@@ -102,8 +102,11 @@ def _handle_play_click(ctx: AppCtx, pos: tuple[int, int], surface: pygame.Surfac
     if mono is None:
         pop_preview(ctx)
         return
-    source_holder = {coord: mono}
-    if not push_preview_if_data(source_holder, coord, ctx):
+    runtime_mono = ctx.runtime_state.get(coord)
+    if runtime_mono is None or runtime_mono.is_empty:
+        pop_preview(ctx)
+        return
+    if not push_preview_if_data(runtime_mono, coord, id(ctx.runtime_state), ctx):
         pop_preview(ctx)
 
 
@@ -346,6 +349,8 @@ def _apply_editor_drop(ctx: AppCtx, pos: tuple[int, int], surface: pygame.Surfac
 def _save_current_level(ctx: AppCtx) -> None:
     if ctx.current_level_idx is None or ctx.runtime_state is None or ctx.static_state is None:
         return
+    # Persist current runtime_state as the new initial_state.
+    ctx.initial_state = clone_state(ctx.runtime_state) or {}
     level = Level(
         static_state=clone_static_state(ctx.static_state) or ctx.static_state,
         initial_state=clone_state(ctx.runtime_state) or {},

@@ -42,5 +42,6 @@ def advance_solver_once(ctx: AppCtx) -> None:
     ctx.solver_session.searched_state_count = searched
     ctx.solver_session.elapsed_seconds = elapsed
     if status in ("solved", "no solution"):
-        ctx.solver_session.status = status
+        normalized = "no_solution" if status == "no solution" else status
+        ctx.solver_session.status = normalized
         ctx.solver_session.generator = None
