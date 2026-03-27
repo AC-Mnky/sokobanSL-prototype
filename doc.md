@@ -82,9 +82,12 @@ python -m pytest -q
 ### 求解器
 - `solve(initial_state, static_state, goal_predicate, step_chunk=1024)` 是生成器。
 - 输出协议：
-  - `("solving", steps, (), searched_state_count)`
-  - `("solved", steps, solution, searched_state_count)`
+  - `("solving", steps, (), searched_state_count, elapsed_seconds)`
+  - `("solved", steps, solution, searched_state_count, elapsed_seconds)`
 - 去重基于 `freeze_state()`。
+- 当前实现已做两点性能优化：
+  - BFS 队列保存父指针，找到解时再回溯路径，减少路径拷贝与内存压力。
+  - `freeze_state()` 对同一坐标集合复用排序结果，减少重复排序开销。
 
 ---
 

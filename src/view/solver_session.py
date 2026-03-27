@@ -9,6 +9,7 @@ from src.view.types import AppCtx
 def stop_solver(ctx: AppCtx) -> None:
     ctx.solver_session.status = "idle"
     ctx.solver_session.generator = None
+    ctx.solver_session.elapsed_seconds = 0.0
 
 
 def start_or_restart_solver(ctx: AppCtx) -> None:
@@ -24,13 +25,14 @@ def start_or_restart_solver(ctx: AppCtx) -> None:
     ctx.solver_session.steps = 0
     ctx.solver_session.solution = tuple()
     ctx.solver_session.searched_state_count = 0
+    ctx.solver_session.elapsed_seconds = 0.0
 
 
 def advance_solver_once(ctx: AppCtx) -> None:
     if ctx.solver_session.status != "running" or ctx.solver_session.generator is None:
         return
     try:
-        status, steps, solution, searched = next(ctx.solver_session.generator)
+        status, steps, solution, searched, elapsed = next(ctx.solver_session.generator)
     except StopIteration:
         ctx.solver_session.status = "idle"
         ctx.solver_session.generator = None
@@ -38,6 +40,7 @@ def advance_solver_once(ctx: AppCtx) -> None:
     ctx.solver_session.steps = steps
     ctx.solver_session.solution = solution
     ctx.solver_session.searched_state_count = searched
+    ctx.solver_session.elapsed_seconds = elapsed
     if status == "solved":
         ctx.solver_session.status = "solved"
         ctx.solver_session.generator = None

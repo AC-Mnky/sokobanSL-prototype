@@ -19,6 +19,7 @@ class SolverSession:
     steps: int = 0
     solution: tuple[Action, ...] = field(default_factory=tuple)
     searched_state_count: int = 0
+    elapsed_seconds: float = 0.0
 
 
 @dataclass(slots=True)

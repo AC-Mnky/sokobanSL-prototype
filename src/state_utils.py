@@ -51,6 +51,15 @@ def state_deep_equal(a: Optional[State], b: Optional[State]) -> bool:
 def freeze_mono(mono: Optional[MonoData]) -> Hashable:
     if mono is None:
         return ("none",)
+    if mono.data is None:
+        return (
+            "mono",
+            mono.is_empty,
+            mono.is_wall,
+            mono.is_controllable,
+            mono.color,
+            ("state-none",),
+        )
     return (
         "mono",
         mono.is_empty,
@@ -61,11 +70,18 @@ def freeze_mono(mono: Optional[MonoData]) -> Hashable:
     )
 
 
+_COORD_ORDER_CACHE: dict[frozenset[Coord], tuple[Coord, ...]] = {}
+
+
 def freeze_state(state: Optional[State]) -> Hashable:
     if state is None:
         return ("state-none",)
-    items = sorted(state.items(), key=lambda kv: (kv[0][0], kv[0][1]))
-    return tuple(((x, y), freeze_mono(mono)) for (x, y), mono in items)
+    key_set = frozenset(state.keys())
+    coords = _COORD_ORDER_CACHE.get(key_set)
+    if coords is None:
+        coords = tuple(sorted(key_set, key=lambda c: (c[0], c[1])))
+        _COORD_ORDER_CACHE[key_set] = coords
+    return tuple((coord, freeze_mono(state.get(coord))) for coord in coords)
 
 
 def ensure_coord_none(state: State, coord: Coord) -> None:

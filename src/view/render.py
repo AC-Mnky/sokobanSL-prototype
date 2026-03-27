@@ -316,7 +316,7 @@ def render_frame(surface: pygame.Surface, ctx: AppCtx, font: pygame.font.Font) -
     y = 10
     for text in (
         "Q:back WASD/Arrows:move R:reset Z:undo H:solver",
-        f"solver={ctx.solver_session.status} steps={ctx.solver_session.steps} searched={ctx.solver_session.searched_state_count}",
+        f"solver={ctx.solver_session.status} steps={ctx.solver_session.steps} searched={ctx.solver_session.searched_state_count} time={ctx.solver_session.elapsed_seconds:.3f}s",
         f"preview_depth={len(ctx.preview_stack)} history={len(ctx.history_stack)}",
     ):
         surface.blit(font.render(text, True, TXT), (12, y))
