@@ -8,7 +8,7 @@ from src.level_io import save_level_by_index
 from src.state_utils import air_mono, clone_mono, clone_state, clone_static_state
 from src.types import Action, ButtonData, Level, MonoData, TargetData
 from src.view.level_select import export_builtin_and_refresh, try_enter_level_by_click
-from src.view.preview import clear_preview, pop_preview, push_preview_if_data, remove_preview_by_source, resolve_visible_mono
+from src.view.preview import clear_preview, pop_preview, push_preview_if_data, resolve_visible_mono
 from src.view.render import EDITOR_RIGHT_PANEL, build_viewport, screen_to_world, world_to_screen
 from src.view.solver_session import start_or_restart_solver, stop_solver
 from src.view.types import AppCtx, DragPayload, DragSession
@@ -74,7 +74,21 @@ def _handle_play_click(ctx: AppCtx, pos: tuple[int, int], surface: pygame.Surfac
         pop_preview(ctx)
         return
 
-    if remove_preview_by_source(ctx, coord):
+    # Preview layers occlude lower world objects at the same coord.
+    for layer in reversed(ctx.preview_stack):
+        if coord not in layer.state:
+            continue
+        top_mono = layer.state.get(coord)
+        if top_mono is None or top_mono.is_empty:
+            return
+        if not push_preview_if_data({coord: top_mono}, coord, ctx):
+            pop_preview(ctx)
+        return
+
+    # Clicking top preview source closes that preview only when no preview
+    # layer (including the top one itself) occupies this coord.
+    if ctx.preview_stack and ctx.preview_stack[-1].source_coord == coord:
+        ctx.preview_stack.pop()
         return
 
     mono = resolve_visible_mono(ctx, coord)
@@ -121,7 +135,7 @@ def _begin_mouse_session(ctx: AppCtx, pos: tuple[int, int], surface: pygame.Surf
         mono = ctx.runtime_state.get(coord)
         cell_rect = world_to_screen(coord, world_vp)
         session.drag_offset = (cell_rect.centerx - pos[0], cell_rect.centery - pos[1])
-        if mono is not None:
+        if mono is not None and not mono.is_empty:
             session.payload = DragPayload(kind="state", source_coord=coord, state_mono=clone_mono(mono))
         else:
             buttons = ctx.static_state.buttons.get(coord, [])
@@ -141,6 +155,8 @@ def _begin_mouse_session(ctx: AppCtx, pos: tuple[int, int], surface: pygame.Surf
                         required_color=target.required_color,
                     ),
                 )
+            elif mono is not None and mono.is_empty:
+                session.payload = DragPayload(kind="state", source_coord=coord, state_mono=clone_mono(mono))
     ctx.drag_session = session
 
 
@@ -179,6 +195,15 @@ def _apply_palette_to_coord(ctx: AppCtx, payload: DragPayload, coord: tuple[int,
     if payload.palette_kind == "box":
         ctx.runtime_state[coord] = MonoData(is_empty=False, is_wall=False, is_controllable=False, color=0, data=None)
         return
+    if payload.palette_kind == "disk":
+        ctx.runtime_state[coord] = MonoData(
+            is_empty=False,
+            is_wall=False,
+            is_controllable=False,
+            color=payload.palette_color,
+            data={(0, 0): None},
+        )
+        return
     if payload.palette_kind == "s_button":
         ctx.static_state.buttons.setdefault(coord, []).append(ButtonData(button_type="s", color=payload.palette_color))
         return
@@ -190,6 +215,41 @@ def _apply_palette_to_coord(ctx: AppCtx, payload: DragPayload, coord: tuple[int,
         return
     if payload.palette_kind == "box_target":
         ctx.static_state.targets[coord] = TargetData(required_is_controllable=False, required_color=0)
+
+
+def _commit_preview_chain(ctx: AppCtx) -> None:
+    if ctx.runtime_state is None:
+        return
+    for i in range(len(ctx.preview_stack) - 1, -1, -1):
+        layer = ctx.preview_stack[i]
+        holder = ctx.runtime_state if i == 0 else ctx.preview_stack[i - 1].state
+        source = holder.get(layer.source_coord)
+        if source is None or source.is_empty:
+            continue
+        source.data = clone_state(layer.state) or {}
+
+
+def _toggle_none_in_top_preview(ctx: AppCtx, pos: tuple[int, int], surface: pygame.Surface) -> bool:
+    if not ctx.editor_mode or not ctx.preview_stack:
+        return False
+    if ctx.runtime_state is None or ctx.static_state is None:
+        return False
+    world_vp = build_viewport(surface, ctx.runtime_state, EDITOR_RIGHT_PANEL if ctx.editor_mode else 0)
+    coord = screen_to_world(pos, world_vp)
+    if coord is None:
+        return False
+    old_state = clone_state(ctx.runtime_state) or {}
+    old_static = clone_static_state(ctx.static_state) or ctx.static_state
+    top = ctx.preview_stack[-1]
+    if coord in top.state:
+        del top.state[coord]
+    else:
+        top.state[coord] = None
+    _commit_preview_chain(ctx)
+    ctx.history_stack.append((old_state, old_static))
+    stop_solver(ctx)
+    _refresh_level_cleared(ctx)
+    return True
 
 
 def _apply_editor_drop(ctx: AppCtx, pos: tuple[int, int], surface: pygame.Surface) -> bool:
@@ -314,6 +374,8 @@ def handle_event(ctx: AppCtx, event: pygame.event.Event, surface: pygame.Surface
             ),
         )
         return False
+    if event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
+        return _toggle_none_in_top_preview(ctx, event.pos, surface)
 
     if event.type == pygame.KEYDOWN:
         if event.key == pygame.K_q:

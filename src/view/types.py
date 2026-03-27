@@ -36,7 +36,7 @@ class DragPayload:
     state_mono: MonoData | None = None
     buttons: list[ButtonData] = field(default_factory=list)
     target: TargetData | None = None
-    palette_kind: Literal["air", "wall", "player", "box", "s_button", "l_button", "player_target", "box_target"] | None = None
+    palette_kind: Literal["air", "wall", "player", "box", "disk", "s_button", "l_button", "player_target", "box_target"] | None = None
     palette_color: int = 0
 
 
@@ -55,7 +55,7 @@ class DragSession:
 class EditorPaletteItem:
     key: str
     label: str
-    kind: Literal["air", "wall", "player", "box", "s_button", "l_button", "player_target", "box_target", "trash"]
+    kind: Literal["air", "wall", "player", "box", "disk", "s_button", "l_button", "player_target", "box_target", "trash"]
     color: int = 0
     rect: pygame.Rect | None = None
 

@@ -141,16 +141,15 @@ def _draw_world(surface: pygame.Surface, state: State, vp: Viewport) -> None:
             continue
         base = _base_color_by_index(mono.color)
         if mono.is_wall:
-            color = _scale_color(base, 0.45)
-        elif mono.is_controllable:
-            color = _scale_color(base, 1.00)
-        elif mono.data is not None:
-            color = _scale_color(base, 0.92)
-        else:
-            color = _scale_color(base, 0.78)
-        pygame.draw.rect(surface, color, rect)
+            _draw_editor_icon(surface, rect, "wall", mono.color)
+            continue
         if mono.is_controllable:
-            _draw_hollow_eyes(surface, rect)
+            _draw_editor_icon(surface, rect, "player", mono.color)
+            continue
+        if mono.data is not None:
+            _draw_editor_icon(surface, rect, "disk", mono.color)
+            continue
+        _draw_editor_icon(surface, rect, "box", mono.color)
 
 
 def _draw_buttons_under_objects(surface: pygame.Surface, ctx: AppCtx, vp: Viewport) -> None:
@@ -336,6 +335,7 @@ def _build_editor_palette(ctx: AppCtx) -> list[EditorPaletteItem]:
         EditorPaletteItem(key="box", label="Box", kind="box", color=0),
     ]
     for c in colors:
+        items.append(EditorPaletteItem(key=f"d_{c}", label=f"D c{c}", kind="disk", color=c))
         items.append(EditorPaletteItem(key=f"s_{c}", label=f"S c{c}", kind="s_button", color=c))
         items.append(EditorPaletteItem(key=f"l_{c}", label=f"L c{c}", kind="l_button", color=c))
     items.append(EditorPaletteItem(key="target_player", label="PTarget", kind="player_target", color=0))
@@ -359,6 +359,10 @@ def _draw_editor_icon(
         _draw_hollow_eyes(surface, rect)
     elif kind == "box":
         pygame.draw.rect(surface, _scale_color(color, 0.78), rect)
+        pygame.draw.rect(surface, _scale_color(color, 0.58), rect, max(1, rect.width // 12))
+    elif kind == "disk":
+        pygame.draw.rect(surface, _scale_color(color, 0.92), rect)
+        pygame.draw.rect(surface, _scale_color(color, 0.60), rect, max(1, rect.width // 10))
     elif kind == "s_button":
         _draw_button_glyph(surface, rect, "S", color)
     elif kind == "l_button":
@@ -415,10 +419,14 @@ def _draw_drag_preview(surface: pygame.Surface, ctx: AppCtx) -> None:
     local_rect = pygame.Rect(0, 0, size, size)
     if payload.kind == "state" and payload.state_mono is not None:
         mono: MonoData = payload.state_mono
-        if mono.is_wall:
+        if mono.is_empty:
+            _draw_editor_icon(preview, local_rect, "air", mono.color)
+        elif mono.is_wall:
             _draw_editor_icon(preview, local_rect, "wall", mono.color)
         elif mono.is_controllable:
             _draw_editor_icon(preview, local_rect, "player", mono.color)
+        elif mono.data is not None:
+            _draw_editor_icon(preview, local_rect, "disk", mono.color)
         else:
             _draw_editor_icon(preview, local_rect, "box", mono.color)
     elif payload.kind == "buttons" and payload.buttons:
@@ -458,9 +466,10 @@ def render_frame(surface: pygame.Surface, ctx: AppCtx, font: pygame.font.Font) -
     # 3) objects on top
     _draw_world(surface, ctx.runtime_state, vp)
     _draw_disk_region_overlay(surface, ctx.runtime_state, vp)
-    _draw_preview_over_map(surface, ctx.preview_stack, vp)
     # 4) targets/eyes above objects
     _draw_overlay(surface, ctx, vp, font)
+    # 5) preview is above targets and blocks interaction below.
+    _draw_preview_over_map(surface, ctx.preview_stack, vp)
     if ctx.editor_mode:
         _draw_editor_panel(surface, ctx, font, right_panel)
         _draw_drag_preview(surface, ctx)

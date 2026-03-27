@@ -4,7 +4,7 @@ from src.level_io import save_levels
 from src.types import ButtonData, Level, MonoData, StaticState, TargetData
 from src.view.input_router import _apply_editor_drop, _begin_mouse_session, handle_event
 from src.view.render import _collect_editor_colors, build_viewport, world_to_screen
-from src.view.types import AppCtx, DragPayload
+from src.view.types import AppCtx, DragPayload, PreviewLayer
 
 
 def player(color: int = 0) -> MonoData:
@@ -97,6 +97,21 @@ def test_air_cell_is_draggable_as_state():
     assert ctx.drag_session.payload.kind == "state"
 
 
+def test_air_priority_is_lower_than_buttons_and_target():
+    ensure_pygame()
+    ctx = make_ctx()
+    ctx.editor_mode = True
+    ctx.runtime_state[(0, 0)] = MonoData(is_empty=True, is_wall=False, is_controllable=False, color=0, data=None)
+    ctx.static_state.buttons[(0, 0)] = [ButtonData(button_type="s", color=1)]
+    ctx.static_state.targets[(0, 0)] = TargetData(required_is_controllable=False, required_color=0)
+    surface = pygame.Surface((640, 480))
+    vp = build_viewport(surface, ctx.runtime_state, right_panel=280)
+    src_rect = world_to_screen((0, 0), vp)
+    _begin_mouse_session(ctx, src_rect.center, surface)
+    assert ctx.drag_session.payload is not None
+    assert ctx.drag_session.payload.kind == "buttons"
+
+
 def test_ctrl_s_overwrites_current_level(tmp_path):
     ensure_pygame()
     levels_path = tmp_path / "levels.pkl"
@@ -134,6 +149,23 @@ def test_mouse_wheel_scrolls_editor_panel():
     changed = handle_event(ctx, e_down, pygame.Surface((640, 480)))
     assert not changed
     assert ctx.editor_panel_scroll > 100
+
+
+def test_palette_disk_places_colored_disk_with_default_data():
+    ensure_pygame()
+    ctx = make_ctx()
+    ctx.editor_mode = True
+    surface = pygame.Surface((640, 480))
+    vp = build_viewport(surface, ctx.runtime_state, right_panel=280)
+    dst_rect = world_to_screen((2, 0), vp)
+    ctx.drag_session.active = True
+    ctx.drag_session.payload = DragPayload(kind="palette", palette_kind="disk", palette_color=3)
+    changed = _apply_editor_drop(ctx, dst_rect.center, surface)
+    assert changed
+    mono = ctx.runtime_state[(2, 0)]
+    assert mono is not None and (not mono.is_empty) and (not mono.is_wall) and (not mono.is_controllable)
+    assert mono.color == 3
+    assert mono.data == {(0, 0): None}
 
 
 def test_air_drag_to_none_keeps_source_as_none():
@@ -192,3 +224,30 @@ def test_air_drag_to_panel_removes_source_key():
     changed = _apply_editor_drop(ctx, (639, 10), pygame.Surface((640, 480)))
     assert changed
     assert (0, 0) not in ctx.runtime_state
+
+
+def test_right_click_toggles_none_in_top_preview_and_commits():
+    ensure_pygame()
+    disk = MonoData(is_empty=False, is_wall=False, is_controllable=False, color=2, data={(0, 0): None})
+    ctx = AppCtx(
+        mode="playing",
+        static_state=StaticState(targets={}, buttons={}),
+        runtime_state={(0, 0): disk},
+        initial_state={(0, 0): disk},
+    )
+    ctx.editor_mode = True
+    ctx.preview_stack = [PreviewLayer(state={(0, 0): None}, color=2, source_coord=(0, 0))]
+    surface = pygame.Surface((640, 480))
+    vp = build_viewport(surface, ctx.runtime_state, right_panel=280)
+    c0 = world_to_screen((0, 0), vp).center
+    c1 = world_to_screen((1, 0), vp).center
+    e_add = pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=3, pos=c1)
+    changed_add = handle_event(ctx, e_add, surface)
+    assert changed_add
+    assert (1, 0) in ctx.preview_stack[-1].state and ctx.preview_stack[-1].state[(1, 0)] is None
+    assert ctx.runtime_state[(0, 0)] is not None and ctx.runtime_state[(0, 0)].data is not None
+    assert (1, 0) in ctx.runtime_state[(0, 0)].data
+    e_remove = pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=3, pos=c0)
+    changed_remove = handle_event(ctx, e_remove, surface)
+    assert changed_remove
+    assert (0, 0) not in ctx.preview_stack[-1].state
