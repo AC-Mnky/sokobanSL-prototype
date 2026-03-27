@@ -114,7 +114,7 @@ def test_air_priority_is_lower_than_buttons_and_target():
 
 def test_ctrl_s_overwrites_current_level(tmp_path):
     ensure_pygame()
-    levels_path = tmp_path / "levels.pkl"
+    levels_path = tmp_path / "levels"
     levels = [
         Level(static_state=StaticState(targets={}, buttons={}), initial_state={(0, 0): player()}),
         Level(static_state=StaticState(targets={}, buttons={}), initial_state={(1, 0): box()}),

@@ -5,13 +5,15 @@ import math
 import pygame
 
 from src.goals import is_goal
-from src.level_io import export_builtin_levels, load_levels
+from src.level_io import export_builtin_levels, load_levels_with_names
 from src.state_utils import clone_state, clone_static_state
 from src.view.types import AppCtx
 
 
 def refresh_levels(ctx: AppCtx) -> None:
-    ctx.levels = load_levels(ctx.levels_path)
+    entries = load_levels_with_names(ctx.levels_path)
+    ctx.level_names = [name for name, _ in entries]
+    ctx.levels = [level for _, level in entries]
 
 
 def export_builtin_and_refresh(ctx: AppCtx) -> None:

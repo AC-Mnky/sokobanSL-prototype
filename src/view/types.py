@@ -63,8 +63,9 @@ class EditorPaletteItem:
 @dataclass(slots=True)
 class AppCtx:
     mode: Mode = "select_level"
-    levels_path: Path = Path("data/levels.pkl")
+    levels_path: Path = Path("data/levels")
     levels: list[Level] = field(default_factory=list)
+    level_names: list[str] = field(default_factory=list)
     current_level_idx: int | None = None
     static_state: StaticState | None = None
     runtime_state: State | None = None

@@ -449,7 +449,10 @@ def render_frame(surface: pygame.Surface, ctx: AppCtx, font: pygame.font.Font) -
         for i, rect in enumerate(rects):
             pygame.draw.rect(surface, (56, 62, 74), rect)
             pygame.draw.rect(surface, GRID, rect, 1)
-            txt = font.render(f"Level {i}", True, TXT)
+            level_name = f"level_{i + 1:03d}"
+            if i < len(ctx.level_names):
+                level_name = ctx.level_names[i]
+            txt = font.render(level_name, True, TXT)
             surface.blit(txt, (rect.x + 8, rect.y + 8))
         info = font.render("Select level | N: export builtin", True, TXT)
         surface.blit(info, (12, 8))

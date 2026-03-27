@@ -7,7 +7,7 @@ from src.goals import is_goal
 from src.level_io import save_level_by_index
 from src.state_utils import air_mono, clone_mono, clone_state, clone_static_state
 from src.types import Action, ButtonData, Level, MonoData, TargetData
-from src.view.level_select import export_builtin_and_refresh, try_enter_level_by_click
+from src.view.level_select import export_builtin_and_refresh, refresh_levels, try_enter_level_by_click
 from src.view.preview import clear_preview, pop_preview, push_preview_if_data, resolve_visible_mono
 from src.view.render import EDITOR_RIGHT_PANEL, build_viewport, screen_to_world, world_to_screen
 from src.view.solver_session import start_or_restart_solver, stop_solver
@@ -361,6 +361,7 @@ def handle_event(ctx: AppCtx, event: pygame.event.Event, surface: pygame.Surface
             export_builtin_and_refresh(ctx)
             return False
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            refresh_levels(ctx)
             try_enter_level_by_click(ctx, event.pos, surface)
         return False
 
@@ -384,6 +385,7 @@ def handle_event(ctx: AppCtx, event: pygame.event.Event, surface: pygame.Surface
             ctx.level_cleared = False
             ctx.editor_mode = False
             stop_solver(ctx)
+            refresh_levels(ctx)
             return False
         if event.key == pygame.K_l:
             ctx.editor_mode = not ctx.editor_mode

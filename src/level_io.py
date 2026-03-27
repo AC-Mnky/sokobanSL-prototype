@@ -7,20 +7,42 @@ from src.sample_levels import make_basic_levels
 from src.types import Level
 
 
-def load_levels(path: str | Path) -> list[Level]:
+def _level_dir(path: str | Path) -> Path:
     p = Path(path)
-    if not p.exists():
+    if p.suffix == ".pkl":
+        return p.parent / p.stem
+    return p
+
+
+def _iter_level_files(levels_dir: Path) -> list[Path]:
+    if not levels_dir.exists():
         return []
-    with p.open("rb") as f:
-        levels = pickle.load(f)
-    return levels
+    return sorted(levels_dir.glob("*.pkl"), key=lambda fp: fp.name.lower())
+
+
+def load_levels_with_names(path: str | Path) -> list[tuple[str, Level]]:
+    levels_dir = _level_dir(path)
+    entries: list[tuple[str, Level]] = []
+    for fp in _iter_level_files(levels_dir):
+        with fp.open("rb") as f:
+            level = pickle.load(f)
+        entries.append((fp.stem, level))
+    return entries
+
+
+def load_levels(path: str | Path) -> list[Level]:
+    return [level for _, level in load_levels_with_names(path)]
 
 
 def save_levels(path: str | Path, levels: list[Level]) -> None:
-    p = Path(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    with p.open("wb") as f:
-        pickle.dump(levels, f)
+    levels_dir = _level_dir(path)
+    levels_dir.mkdir(parents=True, exist_ok=True)
+    for old_file in _iter_level_files(levels_dir):
+        old_file.unlink()
+    for i, level in enumerate(levels, start=1):
+        out = levels_dir / f"level_{i:03d}.pkl"
+        with out.open("wb") as f:
+            pickle.dump(level, f)
 
 
 def export_builtin_levels(path: str | Path) -> list[Level]:
@@ -32,9 +54,10 @@ def export_builtin_levels(path: str | Path) -> list[Level]:
 def save_level_by_index(path: str | Path, index: int, level: Level) -> bool:
     if index < 0:
         return False
-    levels = load_levels(path)
-    if index >= len(levels):
+    levels_dir = _level_dir(path)
+    files = _iter_level_files(levels_dir)
+    if index >= len(files):
         return False
-    levels[index] = level
-    save_levels(path, levels)
+    with files[index].open("wb") as f:
+        pickle.dump(level, f)
     return True

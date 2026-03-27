@@ -7,7 +7,7 @@ from src.view.types import AppCtx
 
 
 def main() -> None:
-    ctx = AppCtx(levels_path=Path("data/levels.pkl"))
+    ctx = AppCtx(levels_path=Path("data/levels"))
     run_app(ctx)
 
 
