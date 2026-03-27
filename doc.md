@@ -84,6 +84,7 @@ python -m pytest -q
 - 输出协议：
   - `("solving", steps, (), searched_state_count, elapsed_seconds)`
   - `("solved", steps, solution, searched_state_count, elapsed_seconds)`
+  - `("no solution", max_depth, (), searched_state_count, elapsed_seconds)`
 - 去重基于 `freeze_state()`。
 - 当前实现已做两点性能优化：
   - BFS 队列保存父指针，找到解时再回溯路径，减少路径拷贝与内存压力。
@@ -124,6 +125,9 @@ python -m pytest -q
 - 采用极简方块渲染，不依赖图片素材。
 - 视口策略：包围当前已知坐标并留边距，自动缩放。
 - 图层顺序：世界层 -> 目标/按钮覆盖层 -> 预览层 -> 文本UI层。
+- 求解器状态行颜色：
+  - `solved` 显示为绿色。
+  - `no_solution` 显示为红色。
 
 ---
 

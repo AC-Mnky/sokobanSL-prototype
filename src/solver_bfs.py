@@ -47,9 +47,12 @@ def solve(
     queue: deque[tuple[int, int]] = deque([(0, 0)])
     visited = {freeze_state(init)}
     searched = 0
+    max_depth = 0
 
     while queue:
         node_idx, depth = queue.popleft()
+        if depth > max_depth:
+            max_depth = depth
         state = states[node_idx]
         searched += 1
         if searched % step_chunk == 0:
@@ -72,3 +75,4 @@ def solve(
                 yield ("solved", len(solution), solution, searched, perf_counter() - t0)
                 return
             queue.append((next_idx, depth + 1))
+    yield ("no solution", max_depth, tuple(), searched, perf_counter() - t0)

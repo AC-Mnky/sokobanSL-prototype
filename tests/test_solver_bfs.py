@@ -1,6 +1,7 @@
 from src.goals import is_goal
 from src.sample_levels import make_basic_levels
 from src.solver_bfs import solve
+from src.types import StaticState, TargetData
 
 
 def test_solver_finds_solution():
@@ -20,3 +21,18 @@ def test_solver_yields_solving_before_solved():
     first = next(gen)
     assert first[0] in ("solving", "solved")
     assert first[4] >= 0.0
+
+
+def test_solver_yields_no_solution_with_max_depth():
+    initial_state = {}
+    static_state = StaticState(
+        targets={(0, 0): TargetData(required_is_controllable=True, required_color=1)},
+        buttons={},
+    )
+    results = list(solve(initial_state, static_state, is_goal, step_chunk=1))
+    status, steps, solution, searched, elapsed = results[-1]
+    assert status == "no solution"
+    assert steps == 0
+    assert solution == tuple()
+    assert searched >= 1
+    assert elapsed >= 0.0

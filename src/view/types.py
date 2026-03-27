@@ -9,7 +9,7 @@ import pygame
 from src.types import Action, Coord, Level, State, StaticState
 
 Mode = Literal["select_level", "playing"]
-SolverStatus = Literal["idle", "running", "solved"]
+SolverStatus = Literal["idle", "running", "solved", "no_solution"]
 
 
 @dataclass(slots=True)

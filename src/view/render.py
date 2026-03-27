@@ -12,6 +12,8 @@ BG = (16, 18, 22)
 BG_CLEARED = (22, 24, 30)
 GRID = (40, 44, 52)
 TXT = (220, 220, 220)
+TXT_SOLVED = (90, 210, 120)
+TXT_NO_SOLUTION = (235, 80, 80)
 BASE_PALETTE: list[tuple[int, int, int]] = [
     (240, 240, 240),  # 0 white
     (235, 80, 80),    # 1 red
@@ -313,11 +315,21 @@ def render_frame(surface: pygame.Surface, ctx: AppCtx, font: pygame.font.Font) -
     # 4) targets/eyes above objects
     _draw_overlay(surface, ctx, vp, font)
 
+    solver_color = TXT
+    if ctx.solver_session.status == "solved":
+        solver_color = TXT_SOLVED
+    elif ctx.solver_session.status == "no_solution":
+        solver_color = TXT_NO_SOLUTION
+
+    lines = [
+        ("Q:back WASD/Arrows:move R:reset Z:undo H:solver", TXT),
+        (
+            f"solver={ctx.solver_session.status} steps={ctx.solver_session.steps} searched={ctx.solver_session.searched_state_count} time={ctx.solver_session.elapsed_seconds:.3f}s",
+            solver_color,
+        ),
+        (f"preview_depth={len(ctx.preview_stack)} history={len(ctx.history_stack)}", TXT),
+    ]
     y = 10
-    for text in (
-        "Q:back WASD/Arrows:move R:reset Z:undo H:solver",
-        f"solver={ctx.solver_session.status} steps={ctx.solver_session.steps} searched={ctx.solver_session.searched_state_count} time={ctx.solver_session.elapsed_seconds:.3f}s",
-        f"preview_depth={len(ctx.preview_stack)} history={len(ctx.history_stack)}",
-    ):
-        surface.blit(font.render(text, True, TXT), (12, y))
+    for text, color in lines:
+        surface.blit(font.render(text, True, color), (12, y))
         y += 20
