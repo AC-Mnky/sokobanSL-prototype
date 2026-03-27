@@ -227,6 +227,21 @@ def test_air_drag_to_panel_removes_source_key():
     assert (0, 0) not in ctx.runtime_state
 
 
+def test_editor_right_click_deletes_like_panel_when_no_preview():
+    ensure_pygame()
+    ctx = make_ctx()
+    ctx.editor_mode = True
+    surface = pygame.Surface((640, 480))
+    vp = build_viewport(surface, ctx.runtime_state, right_panel=280)
+    pos = world_to_screen((1, 0), vp).center
+    e = pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=3, pos=pos)
+    changed = handle_event(ctx, e, surface)
+    assert changed
+    assert ctx.runtime_state[(1, 0)] is not None
+    assert ctx.runtime_state[(1, 0)].is_empty
+    assert len(ctx.history_stack) == 1
+
+
 def test_right_click_toggles_none_in_top_preview_and_commits():
     ensure_pygame()
     disk = MonoData(is_empty=False, is_wall=False, is_controllable=False, color=2, data={(0, 0): None})

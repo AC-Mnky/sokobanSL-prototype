@@ -239,6 +239,50 @@ def _commit_preview_chain(ctx: AppCtx) -> None:
         source.data = clone_state(layer.state) or {}
 
 
+def _editor_delete_at_pos_like_panel(ctx: AppCtx, pos: tuple[int, int], surface: pygame.Surface) -> bool:
+    """Same outcome as dragging the object at coord to the right trash panel."""
+    if ctx.runtime_state is None or ctx.static_state is None:
+        return False
+    panel_rect = pygame.Rect(surface.get_width() - EDITOR_RIGHT_PANEL, 0, EDITOR_RIGHT_PANEL, surface.get_height())
+    if panel_rect.collidepoint(pos):
+        return False
+    world_vp = build_viewport(surface, ctx.runtime_state, EDITOR_RIGHT_PANEL)
+    coord = screen_to_world(pos, world_vp)
+    if coord is None:
+        return False
+    mono = ctx.runtime_state.get(coord)
+    old_state = clone_state(ctx.runtime_state) or {}
+    old_static = clone_static_state(ctx.static_state) or ctx.static_state
+    changed = False
+    if mono is not None and not mono.is_empty:
+        ctx.runtime_state[coord] = air_mono()
+        changed = True
+    elif ctx.static_state.buttons.get(coord):
+        del ctx.static_state.buttons[coord]
+        changed = True
+    elif coord in ctx.static_state.targets:
+        del ctx.static_state.targets[coord]
+        changed = True
+    elif mono is not None and mono.is_empty:
+        ctx.runtime_state.pop(coord, None)
+        changed = True
+    if changed:
+        _clear_level_saved(ctx)
+        ctx.history_stack.append((old_state, old_static))
+        clear_preview(ctx)
+        stop_solver(ctx)
+        _refresh_level_cleared(ctx)
+    return changed
+
+
+def _handle_editor_right_click(ctx: AppCtx, pos: tuple[int, int], surface: pygame.Surface) -> bool:
+    if not ctx.editor_mode:
+        return False
+    if ctx.preview_stack:
+        return _toggle_none_in_top_preview(ctx, pos, surface)
+    return _editor_delete_at_pos_like_panel(ctx, pos, surface)
+
+
 def _toggle_none_in_top_preview(ctx: AppCtx, pos: tuple[int, int], surface: pygame.Surface) -> bool:
     if not ctx.editor_mode or not ctx.preview_stack:
         return False
@@ -391,7 +435,7 @@ def handle_event(ctx: AppCtx, event: pygame.event.Event, surface: pygame.Surface
         )
         return False
     if event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
-        return _toggle_none_in_top_preview(ctx, event.pos, surface)
+        return _handle_editor_right_click(ctx, event.pos, surface)
 
     if event.type == pygame.KEYDOWN:
         if event.key == pygame.K_q:
