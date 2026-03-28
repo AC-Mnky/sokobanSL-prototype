@@ -58,3 +58,15 @@ def test_s_disk_snapshot_keeps_old_when_world_is_none():
     assert new_disk is not None and new_disk.data is not None
     assert new_disk.data.get((1, 1)) is not None
     assert new_disk.data[(1, 1)].color == 7
+
+
+def test_s_disk_snapshot_resolves_region_relative_to_disk_cell():
+    disk = MonoData(is_empty=False, is_wall=False, is_controllable=False, color=1, data={(1, 0): None})
+    state = {(2, 1): disk, (3, 1): box(5)}
+    events = [ButtonData("s", 1)]
+    writes = build_event_writes(state, events, StaticState(targets={}, buttons={}))
+    assert len(writes) == 1
+    new_disk = writes[0].get((2, 1))
+    assert new_disk is not None and new_disk.data is not None
+    assert new_disk.data.get((1, 0)) is not None
+    assert new_disk.data[(1, 0)].color == 5

@@ -36,6 +36,7 @@ python -m pytest -q
 - `src/solver_bfs.py`：BFS 生成器求解器。
 - `src/level_io.py`：pickle 关卡读写、内置关卡导出。
 - `src/sample_levels.py`：最小内置关卡样例。
+- `src/disk_migration.py`：将磁盘 `data` 键从旧版世界坐标转为相对偏移（供一次性迁移脚本使用）。
 
 ### 交互层（view）
 - `src/view/main.py`：程序入口。
@@ -63,7 +64,7 @@ python -m pytest -q
   - `buttons`：按钮映射（同坐标支持多个按钮）。
 - `MonoData`
   - `is_empty / is_wall / is_controllable / color / data`。
-  - `data` 用于磁盘记录态。
+  - `data` 用于磁盘记录态：键为**相对磁盘所在格的偏移**，世界格 = 磁盘位置 + 偏移；主关卡 `State` 的键仍为世界坐标。
 
 ### 单步状态更新
 - 入口是 `src/core_step.py` 的 `apply_action(state, action, static_state)`。
@@ -74,7 +75,8 @@ python -m pytest -q
 ### 事件与写提交
 - 事件触发：`collect_edge_events()`，仅依赖 `is_empty` 的下降沿。
 - 读写轮次：`build_event_writes()` 生成 `writes: list[State]`。
-  - `S` 读取快照时，若目标坐标当前为 `None`，保留磁盘该坐标的旧记录，不用 `None`/空气覆盖。
+  - `S` 读取快照时，对每个相对键 `rel` 看世界格 `disk_pos+rel`；若该格当前为 `None`（无格/空），保留磁盘该 `rel` 的旧记录，不用 `None`/空气覆盖。
+  - `L` 把磁盘 `data` 中每个非 `None` 值写回世界格 `disk_pos+rel`。
 - 提交：`commit_writes()`
   - `None` 候选会被过滤。
   - 相同坐标按深比较分组计数，多数决生效。
@@ -120,7 +122,7 @@ python -m pytest -q
   - 鼠标左键：按下-松开触发；若按下后横向或纵向移动超过半格，预览点击不会触发。
 
 ### 预览规则
-- 点击非空气且 `data` 非空对象：压入一层预览。
+- 点击非空气且 `data` 非空对象：压入一层预览（预览层内键为相对偏移，渲染时用 `anchor_world` 映射到世界格）。
 - 点击空气 / None / 场外：弹出一层预览。
 - 进行实质性操作（移动/重置/撤回）后会清空预览并停止求解器。
 

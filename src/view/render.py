@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 import pygame
 
+from src.state_utils import add_coord
 from src.types import Coord, MonoData, State
 from src.view.level_select import compute_level_button_rects
 from src.view.types import AppCtx, EditorPaletteItem, PreviewLayer
@@ -171,15 +172,15 @@ def _draw_buttons_under_objects(surface: pygame.Surface, ctx: AppCtx, vp: Viewpo
 
 def _draw_disk_region_overlay(surface: pygame.Surface, state: State, vp: Viewport) -> None:
     alpha_surface = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
-    for mono in state.values():
+    for disk_world, mono in state.items():
         if mono is None or mono.is_empty or mono.is_wall or mono.data is None:
             continue
         if len(mono.data) == 0:
             continue
         base = _base_color_by_index(mono.color)
         rgba = (base[0], base[1], base[2], 64)  # 25% opacity
-        for coord in mono.data.keys():
-            pygame.draw.rect(alpha_surface, rgba, world_to_screen(coord, vp))
+        for rel in mono.data.keys():
+            pygame.draw.rect(alpha_surface, rgba, world_to_screen(add_coord(disk_world, rel), vp))
     surface.blit(alpha_surface, (0, 0))
 
 
@@ -227,17 +228,18 @@ def _draw_preview_over_map(surface: pygame.Surface, preview_stack: list[PreviewL
     for layer in preview_stack:
         mat_color = _scale_color(_base_color_by_index(layer.color), 0.35)
         expand = max(1, int(round(vp.cell * 0.2)))  # 0.1 grid per side
-        for coord in layer.state.keys():
-            base_rect = world_to_screen(coord, vp)
+        for rel in layer.state.keys():
+            base_rect = world_to_screen(add_coord(layer.anchor_world, rel), vp)
             material = base_rect.inflate(expand, expand)
             pygame.draw.rect(surface, mat_color, material)
-        _draw_world(surface, layer.state, vp)
+        display_state = {add_coord(layer.anchor_world, rel): m for rel, m in layer.state.items()}
+        _draw_world(surface, display_state, vp)
         # Explicit None in preview state should be rendered as '?'.
         q_color = _scale_color(_base_color_by_index(layer.color), 1.0)
-        for coord, mono in layer.state.items():
+        for rel, mono in layer.state.items():
             if mono is not None:
                 continue
-            rect = world_to_screen(coord, vp)
+            rect = world_to_screen(add_coord(layer.anchor_world, rel), vp)
             _draw_question(surface, rect, q_color)
 
 

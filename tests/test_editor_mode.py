@@ -252,7 +252,9 @@ def test_right_click_toggles_none_in_top_preview_and_commits():
         initial_state={(0, 0): disk},
     )
     ctx.editor_mode = True
-    ctx.preview_stack = [PreviewLayer(state={(0, 0): None}, color=2, source_coord=(0, 0))]
+    ctx.preview_stack = [
+        PreviewLayer(state={(0, 0): None}, color=2, source_coord=(0, 0), anchor_world=(0, 0))
+    ]
     surface = pygame.Surface((640, 480))
     vp = build_viewport(surface, ctx.runtime_state, right_panel=280)
     c0 = world_to_screen((0, 0), vp).center
@@ -311,3 +313,20 @@ def test_nested_same_coord_disk_opens_nested_preview_not_remove_parent():
     assert toggled_b
     assert len(ctx.preview_stack) == 1
     assert ctx.preview_stack[0].source_coord == (0, 0)
+
+
+def test_push_preview_anchor_world_root_and_nested():
+    ctx = AppCtx(
+        mode="playing",
+        static_state=StaticState(targets={}, buttons={}),
+        runtime_state={},
+        initial_state={},
+    )
+    disk_b = MonoData(is_empty=False, is_wall=False, is_controllable=False, color=2, data={(0, 0): None})
+    disk_a = MonoData(is_empty=False, is_wall=False, is_controllable=False, color=1, data={(-1, 0): disk_b})
+    root = {(2, 0): disk_a}
+    ctx.runtime_state = root
+    push_preview_if_data(disk_a, (2, 0), id(root), ctx)
+    assert ctx.preview_stack[-1].anchor_world == (2, 0)
+    push_preview_if_data(disk_b, (-1, 0), id(ctx.preview_stack[0].state), ctx)
+    assert ctx.preview_stack[-1].anchor_world == (1, 0)

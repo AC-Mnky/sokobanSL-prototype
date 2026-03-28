@@ -127,3 +127,11 @@ def is_solid_value(mono: Optional[MonoData]) -> bool:
 
 def step_coord(coord: Coord, action: tuple[int, int]) -> Coord:
     return (coord[0] + action[0], coord[1] + action[1])
+
+
+def add_coord(a: Coord, b: Coord) -> Coord:
+    return (a[0] + b[0], a[1] + b[1])
+
+
+def sub_coord(a: Coord, b: Coord) -> Coord:
+    return (a[0] - b[0], a[1] - b[1])

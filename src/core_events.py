@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from src.core_write_commit import commit_writes
-from src.state_utils import clone_mono, is_empty_value
+from src.state_utils import add_coord, clone_mono, is_empty_value
 from src.types import ButtonData, Event, MonoData, State, StaticState
 
 
@@ -27,15 +27,16 @@ def _disk_coords_by_color(state: State, color: int) -> list[tuple[int, int]]:
     return coords
 
 
-def _snapshot_from_disk_region(world: State, disk_data: State) -> State:
+def _snapshot_from_disk_region(world: State, disk_data: State, disk_coord: tuple[int, int]) -> State:
     snapshot: State = {}
-    for coord in disk_data.keys():
-        mono = world.get(coord)
+    for rel in disk_data.keys():
+        w = add_coord(disk_coord, rel)
+        mono = world.get(w)
         if mono is None:
             # Keep previous disk record when world has no cell.
-            snapshot[coord] = clone_mono(disk_data.get(coord))
+            snapshot[rel] = clone_mono(disk_data.get(rel))
         else:
-            snapshot[coord] = clone_mono(mono)
+            snapshot[rel] = clone_mono(mono)
     return snapshot
 
 
@@ -49,7 +50,7 @@ def build_event_writes(state: State, events: list[Event], static_state: StaticSt
                 continue
             if event.button_type == "s":
                 disk_data = disk_mono.data or {}
-                new_data = _snapshot_from_disk_region(state, disk_data)
+                new_data = _snapshot_from_disk_region(state, disk_data, disk_coord)
                 new_disk = clone_mono(disk_mono)
                 assert new_disk is not None
                 new_disk.data = new_data
@@ -59,10 +60,10 @@ def build_event_writes(state: State, events: list[Event], static_state: StaticSt
                 if payload is None or len(payload) == 0:
                     continue
                 write: State = {}
-                for coord, value in payload.items():
+                for rel, value in payload.items():
                     if value is None:
                         continue
-                    write[coord] = clone_mono(value)
+                    write[add_coord(disk_coord, rel)] = clone_mono(value)
                 if write:
                     writes.append(write)
     return writes

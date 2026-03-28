@@ -29,7 +29,7 @@ def make_basic_levels() -> list[Level]:
     initial_state = {
         (0, 0): _player(1),
         (2, 0): _wall(),
-        (1, 1): _disk(1, {(0, 0): None, (1, 0): None}),
+        (1, 1): _disk(1, {(-1, -1): None, (0, -1): None}),
     }
     levels.append(Level(static_state=static_state, initial_state=initial_state))
 

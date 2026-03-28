@@ -5,7 +5,7 @@ import pygame
 from src.core_step import apply_action
 from src.goals import is_goal
 from src.level_io import save_level_by_index
-from src.state_utils import air_mono, clone_mono, clone_state, clone_static_state
+from src.state_utils import air_mono, clone_mono, clone_state, clone_static_state, sub_coord
 from src.types import Action, ButtonData, Level, MonoData, TargetData
 from src.view.level_select import export_builtin_and_refresh, refresh_levels, try_enter_level_by_click
 from src.view.preview import clear_preview, pop_preview, push_preview_if_data, resolve_visible_mono
@@ -83,18 +83,19 @@ def _handle_play_click(ctx: AppCtx, pos: tuple[int, int], surface: pygame.Surfac
 
     # Preview layers occlude lower world objects at the same coord.
     for layer in reversed(ctx.preview_stack):
-        if coord not in layer.state:
+        rel = sub_coord(coord, layer.anchor_world)
+        if rel not in layer.state:
             continue
-        top_mono = layer.state.get(coord)
+        top_mono = layer.state.get(rel)
         if top_mono is None or top_mono.is_empty:
             return
-        if not push_preview_if_data(top_mono, coord, id(layer.state), ctx):
+        if not push_preview_if_data(top_mono, rel, id(layer.state), ctx):
             pop_preview(ctx)
         return
 
     # Clicking top preview source closes that preview only when no preview
     # layer (including the top one itself) occupies this coord.
-    if ctx.preview_stack and ctx.preview_stack[-1].source_coord == coord:
+    if ctx.preview_stack and ctx.preview_stack[-1].anchor_world == coord:
         ctx.preview_stack.pop()
         return
 
@@ -295,10 +296,11 @@ def _toggle_none_in_top_preview(ctx: AppCtx, pos: tuple[int, int], surface: pyga
     old_state = clone_state(ctx.runtime_state) or {}
     old_static = clone_static_state(ctx.static_state) or ctx.static_state
     top = ctx.preview_stack[-1]
-    if coord in top.state:
-        del top.state[coord]
+    rel = sub_coord(coord, top.anchor_world)
+    if rel in top.state:
+        del top.state[rel]
     else:
-        top.state[coord] = None
+        top.state[rel] = None
     _commit_preview_chain(ctx)
     _clear_level_saved(ctx)
     ctx.history_stack.append((old_state, old_static))
