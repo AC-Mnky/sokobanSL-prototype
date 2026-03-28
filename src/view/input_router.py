@@ -212,7 +212,7 @@ def _apply_palette_to_coord(ctx: AppCtx, payload: DragPayload, coord: tuple[int,
             is_wall=False,
             is_controllable=False,
             color=payload.palette_color,
-            data={(0, 0): None},
+            data={(1, 0): None},
         )
         return
     if payload.palette_kind == "s_button":
@@ -225,7 +225,10 @@ def _apply_palette_to_coord(ctx: AppCtx, payload: DragPayload, coord: tuple[int,
         ctx.static_state.targets[coord] = TargetData(required_is_controllable=True, required_color=0)
         return
     if payload.palette_kind == "box_target":
-        ctx.static_state.targets[coord] = TargetData(required_is_controllable=False, required_color=0)
+        ctx.static_state.targets[coord] = TargetData(
+            required_is_controllable=False,
+            required_color=payload.palette_color,
+        )
 
 
 def _commit_preview_chain(ctx: AppCtx) -> None:

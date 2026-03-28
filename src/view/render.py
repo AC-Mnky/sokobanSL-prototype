@@ -338,6 +338,7 @@ def _build_editor_palette(ctx: AppCtx) -> list[EditorPaletteItem]:
     ]
     for c in colors:
         items.append(EditorPaletteItem(key=f"d_{c}", label=f"D c{c}", kind="disk", color=c))
+        items.append(EditorPaletteItem(key=f"bt_{c}", label=f"BT c{c}", kind="box_target", color=c))
         items.append(EditorPaletteItem(key=f"s_{c}", label=f"S c{c}", kind="s_button", color=c))
         items.append(EditorPaletteItem(key=f"l_{c}", label=f"L c{c}", kind="l_button", color=c))
     items.append(EditorPaletteItem(key="target_player", label="PTarget", kind="player_target", color=0))

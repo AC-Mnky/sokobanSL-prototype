@@ -166,7 +166,7 @@ def test_palette_disk_places_colored_disk_with_default_data():
     mono = ctx.runtime_state[(2, 0)]
     assert mono is not None and (not mono.is_empty) and (not mono.is_wall) and (not mono.is_controllable)
     assert mono.color == 3
-    assert mono.data == {(0, 0): None}
+    assert mono.data == {(1, 0): None}
 
 
 def test_air_drag_to_none_keeps_source_as_none():
