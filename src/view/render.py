@@ -444,6 +444,38 @@ def _draw_drag_preview(surface: pygame.Surface, ctx: AppCtx) -> None:
     surface.blit(preview, rect.topleft)
 
 
+def _draw_middle_selection(surface: pygame.Surface, ctx: AppCtx, vp: Viewport) -> None:
+    if ctx.runtime_state is None:
+        return
+
+    if ctx.middle_select_dragging and ctx.middle_select_press_coord is not None:
+        p = ctx.middle_select_press_coord
+        h = ctx.middle_select_hover_coord or p
+        x0 = min(p[0], h[0])
+        y0 = min(p[1], h[1])
+        x1 = max(p[0], h[0])
+        y1 = max(p[1], h[1])
+    elif ctx.middle_select_anchor is not None and ctx.middle_select_size is not None:
+        x0 = ctx.middle_select_anchor[0]
+        y0 = ctx.middle_select_anchor[1]
+        x1 = x0 + ctx.middle_select_size[0] - 1
+        y1 = y0 + ctx.middle_select_size[1] - 1
+    else:
+        return
+
+    rect0 = world_to_screen((x0, y0), vp)
+    rect1 = world_to_screen((x1, y1), vp)
+    screen_rect = pygame.Rect(rect0.x, rect0.y, rect1.right - rect0.x, rect1.bottom - rect0.y)
+    if screen_rect.width <= 0 or screen_rect.height <= 0:
+        return
+
+    # 25% opacity white fill
+    alpha = 64  # 255 * 0.25
+    box = pygame.Surface((screen_rect.width, screen_rect.height), pygame.SRCALPHA)
+    box.fill((255, 255, 255, alpha))
+    surface.blit(box, screen_rect.topleft)
+
+
 def render_frame(surface: pygame.Surface, ctx: AppCtx, font: pygame.font.Font) -> None:
     surface.fill(BG_CLEARED if (ctx.mode == "playing" and ctx.level_cleared) else BG)
     if ctx.mode == "select_level":
@@ -479,6 +511,7 @@ def render_frame(surface: pygame.Surface, ctx: AppCtx, font: pygame.font.Font) -
     if ctx.editor_mode:
         _draw_editor_panel(surface, ctx, font, right_panel)
         _draw_drag_preview(surface, ctx)
+        _draw_middle_selection(surface, ctx, vp)
     else:
         ctx.editor_palette_items = []
 

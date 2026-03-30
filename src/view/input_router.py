@@ -5,8 +5,8 @@ import pygame
 from src.core_step import apply_action
 from src.goals import is_goal
 from src.level_io import save_level_by_index
-from src.state_utils import air_mono, clone_mono, clone_state, clone_static_state, sub_coord
-from src.types import Action, ButtonData, Level, MonoData, TargetData
+from src.state_utils import air_mono, clone_mono, clone_state, clone_static_state, mono_deep_equal, sub_coord
+from src.types import Action, ButtonData, Level, MonoData, StaticState, TargetData
 from src.view.level_select import export_builtin_and_refresh, refresh_levels, try_enter_level_by_click
 from src.view.preview import clear_preview, pop_preview, push_preview_if_data, resolve_visible_mono
 from src.view.render import EDITOR_RIGHT_PANEL, build_viewport, screen_to_world, world_to_screen
@@ -25,6 +25,194 @@ KEY_TO_ACTION: dict[int, Action] = {
     pygame.K_RIGHT: (1, 0),
 }
 EDITOR_SCROLL_STEP = 36
+
+
+def _cancel_middle_selection(ctx: AppCtx) -> None:
+    ctx.middle_select_dragging = False
+    ctx.middle_select_press_coord = None
+    ctx.middle_select_hover_coord = None
+    ctx.middle_select_anchor = None
+    ctx.middle_select_size = None
+
+
+def _get_committed_selection_bounds(ctx: AppCtx) -> tuple[int, int, int, int] | None:
+    if ctx.middle_select_anchor is None or ctx.middle_select_size is None:
+        return None
+    x0 = ctx.middle_select_anchor[0]
+    y0 = ctx.middle_select_anchor[1]
+    x1 = x0 + ctx.middle_select_size[0] - 1
+    y1 = y0 + ctx.middle_select_size[1] - 1
+    return x0, y0, x1, y1
+
+
+def _iter_rect_coords(x0: int, y0: int, x1: int, y1: int):
+    for x in range(x0, x1 + 1):
+        for y in range(y0, y1 + 1):
+            yield (x, y)
+
+
+def _save_committed_selection_to_clipboard(ctx: AppCtx) -> None:
+    if ctx.runtime_state is None or ctx.static_state is None:
+        return
+    if ctx.middle_select_anchor is None or ctx.middle_select_size is None:
+        return
+    x0, y0 = ctx.middle_select_anchor
+    x_len, y_len = ctx.middle_select_size
+    state_sub = {}
+    for coord in _iter_rect_coords(x0, y0, x0 + x_len - 1, y0 + y_len - 1):
+        # Must distinguish "missing key" vs "key exists with None".
+        if coord not in ctx.runtime_state:
+            continue
+        rel = (coord[0] - x0, coord[1] - y0)
+        state_sub[rel] = clone_mono(ctx.runtime_state.get(coord))
+    targets_sub = {}
+    buttons_sub = {}
+    for coord in _iter_rect_coords(x0, y0, x0 + x_len - 1, y0 + y_len - 1):
+        rel = (coord[0] - x0, coord[1] - y0)
+        if coord in ctx.static_state.targets:
+            t = ctx.static_state.targets[coord]
+            targets_sub[rel] = TargetData(required_is_controllable=t.required_is_controllable, required_color=t.required_color)
+        if coord in ctx.static_state.buttons:
+            moved = ctx.static_state.buttons[coord]
+            buttons_sub[rel] = [ButtonData(button_type=b.button_type, color=b.color) for b in moved]
+
+    key = (x_len, y_len)
+    ctx.clipboard[key] = (state_sub, StaticState(targets=targets_sub, buttons=buttons_sub))
+    ctx.clipboard_last_key = key
+
+
+def _apply_clipboard_to_selection(ctx: AppCtx, key: tuple[int, int]) -> bool:
+    if ctx.runtime_state is None or ctx.static_state is None:
+        return False
+    if ctx.middle_select_anchor is None or ctx.middle_select_size is None:
+        return False
+    if key not in ctx.clipboard:
+        return False
+    if key != ctx.middle_select_size:
+        return False
+
+    old_state = clone_state(ctx.runtime_state) or {}
+    old_static = clone_static_state(ctx.static_state) or ctx.static_state
+
+    x0, y0 = ctx.middle_select_anchor
+    x_len, y_len = key
+    clip_state, clip_static = ctx.clipboard[key]
+
+    changed = False
+
+    # Ctrl+V runtime state: only cover coords where clipboard `state` has key
+    # AND clipboard value is not None. Missing keys / explicit None => no-op.
+    for coord in _iter_rect_coords(x0, y0, x0 + x_len - 1, y0 + y_len - 1):
+        rel = (coord[0] - x0, coord[1] - y0)
+        if rel not in clip_state:
+            continue
+        clip_mono = clip_state[rel]
+        if clip_mono is None:
+            continue
+        cur_mono = ctx.runtime_state.get(coord)
+        if not mono_deep_equal(cur_mono, clip_mono):
+            ctx.runtime_state[coord] = clone_mono(clip_mono)
+            changed = True
+
+    # Ctrl+V static state: overwrite selection area (clear then apply clipboard).
+    # Note: The new "skip None/missing" rule only applies to runtime `state`.
+    for coord in _iter_rect_coords(x0, y0, x0 + x_len - 1, y0 + y_len - 1):
+        if coord in ctx.static_state.buttons:
+            del ctx.static_state.buttons[coord]
+            changed = True
+        if coord in ctx.static_state.targets:
+            del ctx.static_state.targets[coord]
+            changed = True
+
+    for rel, target in clip_static.targets.items():
+        abs_coord = (rel[0] + x0, rel[1] + y0)
+        ctx.static_state.targets[abs_coord] = TargetData(
+            required_is_controllable=target.required_is_controllable,
+            required_color=target.required_color,
+        )
+        changed = True
+    for rel, buttons in clip_static.buttons.items():
+        abs_coord = (rel[0] + x0, rel[1] + y0)
+        ctx.static_state.buttons[abs_coord] = [ButtonData(button_type=b.button_type, color=b.color) for b in buttons]
+        changed = True
+
+    if not changed:
+        return False
+
+    _clear_level_saved(ctx)
+    ctx.history_stack.append((old_state, old_static))
+    clear_preview(ctx)
+    stop_solver(ctx)
+    _refresh_level_cleared(ctx)
+    return True
+
+
+def _clear_committed_selection(ctx: AppCtx) -> bool:
+    """
+    Delete semantics (runtime):
+    - If selection contains no solid cells => remove all state entries in the selection.
+    - Else => convert all solid cells to air_mono(); keep others (None/empty) unchanged.
+    Static state: always clear within selection.
+    """
+    if ctx.runtime_state is None or ctx.static_state is None:
+        return False
+    if ctx.middle_select_anchor is None or ctx.middle_select_size is None:
+        return False
+
+    bounds = _get_committed_selection_bounds(ctx)
+    if bounds is None:
+        return False
+    x0, y0, x1, y1 = bounds
+    x_len = x1 - x0 + 1
+    y_len = y1 - y0 + 1
+    _ = (x_len, y_len)
+
+    old_state = clone_state(ctx.runtime_state) or {}
+    old_static = clone_static_state(ctx.static_state) or ctx.static_state
+
+    has_solid = False
+    for coord in _iter_rect_coords(x0, y0, x1, y1):
+        if coord not in ctx.runtime_state:
+            continue
+        mono = ctx.runtime_state.get(coord)
+        if mono is not None and not mono.is_empty:
+            has_solid = True
+            break
+
+    changed = False
+
+    if not has_solid:
+        for coord in _iter_rect_coords(x0, y0, x1, y1):
+            if coord in ctx.runtime_state:
+                ctx.runtime_state.pop(coord, None)
+                changed = True
+    else:
+        for coord in _iter_rect_coords(x0, y0, x1, y1):
+            if coord not in ctx.runtime_state:
+                continue
+            mono = ctx.runtime_state.get(coord)
+            if mono is not None and not mono.is_empty:
+                if not mono_deep_equal(mono, air_mono()):
+                    ctx.runtime_state[coord] = air_mono()
+                    changed = True
+
+    for coord in _iter_rect_coords(x0, y0, x1, y1):
+        if coord in ctx.static_state.buttons:
+            del ctx.static_state.buttons[coord]
+            changed = True
+        if coord in ctx.static_state.targets:
+            del ctx.static_state.targets[coord]
+            changed = True
+
+    if not changed:
+        return False
+
+    _clear_level_saved(ctx)
+    ctx.history_stack.append((old_state, old_static))
+    clear_preview(ctx)
+    stop_solver(ctx)
+    _refresh_level_cleared(ctx)
+    return True
 
 
 def _refresh_level_cleared(ctx: AppCtx) -> None:
@@ -47,6 +235,7 @@ def _apply_substantive_action(ctx: AppCtx, action: Action) -> None:
     clear_preview(ctx)
     stop_solver(ctx)
     _refresh_level_cleared(ctx)
+    _cancel_middle_selection(ctx)
 
 
 def _reset_level(ctx: AppCtx) -> None:
@@ -58,6 +247,7 @@ def _reset_level(ctx: AppCtx) -> None:
     clear_preview(ctx)
     stop_solver(ctx)
     _refresh_level_cleared(ctx)
+    _cancel_middle_selection(ctx)
 
 
 def _undo(ctx: AppCtx) -> None:
@@ -70,6 +260,7 @@ def _undo(ctx: AppCtx) -> None:
     clear_preview(ctx)
     stop_solver(ctx)
     _refresh_level_cleared(ctx)
+    _cancel_middle_selection(ctx)
 
 
 def _return_to_select_level(ctx: AppCtx) -> None:
@@ -77,6 +268,7 @@ def _return_to_select_level(ctx: AppCtx) -> None:
     ctx.preview_stack.clear()
     ctx.level_cleared = False
     ctx.editor_mode = False
+    _cancel_middle_selection(ctx)
     stop_solver(ctx)
     refresh_levels(ctx)
 
@@ -98,7 +290,12 @@ def _handle_play_click(ctx: AppCtx, pos: tuple[int, int], surface: pygame.Surfac
         top_mono = layer.state.get(rel)
         if top_mono is None or top_mono.is_empty:
             return
-        if not push_preview_if_data(top_mono, rel, id(layer.state), ctx):
+        before_depth = len(ctx.preview_stack)
+        ok = push_preview_if_data(top_mono, rel, id(layer.state), ctx)
+        after_depth = len(ctx.preview_stack)
+        if ok and after_depth > before_depth:
+            _cancel_middle_selection(ctx)
+        if not ok:
             pop_preview(ctx)
         return
 
@@ -116,7 +313,12 @@ def _handle_play_click(ctx: AppCtx, pos: tuple[int, int], surface: pygame.Surfac
     if runtime_mono is None or runtime_mono.is_empty:
         pop_preview(ctx)
         return
-    if not push_preview_if_data(runtime_mono, coord, id(ctx.runtime_state), ctx):
+    before_depth = len(ctx.preview_stack)
+    ok = push_preview_if_data(runtime_mono, coord, id(ctx.runtime_state), ctx)
+    after_depth = len(ctx.preview_stack)
+    if ok and after_depth > before_depth:
+        _cancel_middle_selection(ctx)
+    if not ok:
         pop_preview(ctx)
 
 
@@ -292,8 +494,14 @@ def _handle_editor_right_click(ctx: AppCtx, pos: tuple[int, int], surface: pygam
     if not ctx.editor_mode:
         return False
     if ctx.preview_stack:
-        return _toggle_none_in_top_preview(ctx, pos, surface)
-    return _editor_delete_at_pos_like_panel(ctx, pos, surface)
+        changed = _toggle_none_in_top_preview(ctx, pos, surface)
+        if changed:
+            _cancel_middle_selection(ctx)
+        return changed
+    changed = _editor_delete_at_pos_like_panel(ctx, pos, surface)
+    if changed:
+        _cancel_middle_selection(ctx)
+    return changed
 
 
 def _toggle_none_in_top_preview(ctx: AppCtx, pos: tuple[int, int], surface: pygame.Surface) -> bool:
@@ -401,6 +609,7 @@ def _apply_editor_drop(ctx: AppCtx, pos: tuple[int, int], surface: pygame.Surfac
         clear_preview(ctx)
         stop_solver(ctx)
         _refresh_level_cleared(ctx)
+        _cancel_middle_selection(ctx)
     return changed
 
 
@@ -452,16 +661,62 @@ def handle_event(ctx: AppCtx, event: pygame.event.Event, surface: pygame.Surface
     if event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
         return _handle_editor_right_click(ctx, event.pos, surface)
 
+    if event.type == pygame.MOUSEBUTTONDOWN and event.button == 2:
+        if not ctx.editor_mode:
+            return False
+        # Middle-button selection must not conflict with disk previews.
+        clear_preview(ctx)
+        _cancel_middle_selection(ctx)
+        if ctx.runtime_state is None:
+            return False
+        world_vp = build_viewport(surface, ctx.runtime_state, EDITOR_RIGHT_PANEL)
+        coord = screen_to_world(event.pos, world_vp)
+        if coord is None:
+            return False
+        ctx.middle_select_dragging = True
+        ctx.middle_select_press_coord = coord
+        ctx.middle_select_hover_coord = coord
+        return False
+
     if event.type == pygame.KEYDOWN:
         if event.key == pygame.K_q or event.key == pygame.K_ESCAPE:
             _return_to_select_level(ctx)
             return False
         if event.key == pygame.K_l:
             ctx.editor_mode = not ctx.editor_mode
+            _cancel_middle_selection(ctx)
             return False
         if event.key == pygame.K_s and (event.mod & pygame.KMOD_CTRL):
             _save_current_level(ctx)
             return False
+
+        if ctx.editor_mode:
+            bounds = _get_committed_selection_bounds(ctx)
+            if bounds is not None:
+                x0, y0, x1, y1 = bounds
+                _ = (x0, y0, x1, y1)
+                x_len = ctx.middle_select_size[0] if ctx.middle_select_size is not None else 0
+                y_len = ctx.middle_select_size[1] if ctx.middle_select_size is not None else 0
+                key = (x_len, y_len)
+
+                if event.key == pygame.K_c and (event.mod & pygame.KMOD_CTRL):
+                    _save_committed_selection_to_clipboard(ctx)
+                    _cancel_middle_selection(ctx)
+                    return False
+                if event.key == pygame.K_v and (event.mod & pygame.KMOD_CTRL):
+                    changed = _apply_clipboard_to_selection(ctx, key)
+                    _cancel_middle_selection(ctx)
+                    return changed
+                if event.key == pygame.K_x and (event.mod & pygame.KMOD_CTRL):
+                    _save_committed_selection_to_clipboard(ctx)
+                    changed = _clear_committed_selection(ctx)
+                    _cancel_middle_selection(ctx)
+                    return changed
+                if event.key == pygame.K_DELETE:
+                    changed = _clear_committed_selection(ctx)
+                    _cancel_middle_selection(ctx)
+                    return changed
+
         if event.key in KEY_TO_ACTION:
             if ctx.level_cleared:
                 return False
@@ -480,7 +735,32 @@ def handle_event(ctx: AppCtx, event: pygame.event.Event, surface: pygame.Surface
         _begin_mouse_session(ctx, event.pos, surface)
         return False
     if event.type == pygame.MOUSEMOTION:
+        if ctx.editor_mode and ctx.middle_select_dragging:
+            if ctx.runtime_state is not None:
+                world_vp = build_viewport(surface, ctx.runtime_state, EDITOR_RIGHT_PANEL)
+                ctx.middle_select_hover_coord = screen_to_world(event.pos, world_vp)
+            return False
         _update_mouse_session(ctx, event.pos, surface)
+        return False
+    if event.type == pygame.MOUSEBUTTONUP and event.button == 2:
+        if not ctx.editor_mode:
+            return False
+        if not ctx.middle_select_dragging or ctx.runtime_state is None or ctx.middle_select_press_coord is None:
+            return False
+        world_vp = build_viewport(surface, ctx.runtime_state, EDITOR_RIGHT_PANEL)
+        release_coord = screen_to_world(event.pos, world_vp)
+        if release_coord is None:
+            release_coord = ctx.middle_select_hover_coord or ctx.middle_select_press_coord
+        p = ctx.middle_select_press_coord
+        x0 = min(p[0], release_coord[0])
+        y0 = min(p[1], release_coord[1])
+        x_len = abs(p[0] - release_coord[0]) + 1
+        y_len = abs(p[1] - release_coord[1]) + 1
+        ctx.middle_select_anchor = (x0, y0)
+        ctx.middle_select_size = (x_len, y_len)
+        ctx.middle_select_dragging = False
+        ctx.middle_select_press_coord = None
+        ctx.middle_select_hover_coord = None
         return False
     if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
         changed = _apply_editor_drop(ctx, event.pos, surface)

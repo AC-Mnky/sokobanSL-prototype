@@ -82,6 +82,19 @@ class AppCtx:
     editor_palette_items: list[EditorPaletteItem] = field(default_factory=list)
     editor_panel_scroll: int = 0
     editor_panel_scroll_max: int = 0
+    # Middle (mouse button 2) rectangle selection in editor_mode.
+    # Committed selection uses `middle_select_anchor` + `middle_select_size`,
+    # while dragging uses `middle_select_press_coord` + `middle_select_hover_coord`.
+    middle_select_dragging: bool = False
+    middle_select_press_coord: Coord | None = None
+    middle_select_hover_coord: Coord | None = None
+    middle_select_anchor: Coord | None = None
+    middle_select_size: tuple[int, int] | None = None  # (x_len, y_len)
+    # Clipboard lifetime == program runtime.
+    # key: (x_len, y_len) in cells
+    # value: (relative state sub-dict, relative static state sub-dict)
+    clipboard: dict[tuple[int, int], tuple[State, StaticState]] = field(default_factory=dict)
+    clipboard_last_key: tuple[int, int] | None = None
     running: bool = True
     # cached per frame
     last_level_button_rects: list[pygame.Rect] = field(default_factory=list)
