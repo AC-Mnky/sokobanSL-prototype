@@ -171,6 +171,10 @@ def _draw_buttons_under_objects(surface: pygame.Surface, ctx: AppCtx, vp: Viewpo
 
 
 def _draw_disk_region_overlay(surface: pygame.Surface, state: State, vp: Viewport) -> None:
+    # NOTE: pygame.draw.* on a SRCALPHA surface writes pixels (overwrites),
+    # so drawing multiple semi-transparent rects onto the same surface will NOT
+    # accumulate opacity as expected. To make overlapping disk regions stack,
+    # we draw each disk into its own temporary surface, then alpha-blit it.
     alpha_surface = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
     for disk_world, mono in state.items():
         if mono is None or mono.is_empty or mono.is_wall or mono.data is None:
@@ -179,8 +183,10 @@ def _draw_disk_region_overlay(surface: pygame.Surface, state: State, vp: Viewpor
             continue
         base = _base_color_by_index(mono.color)
         rgba = (base[0], base[1], base[2], 64)  # 25% opacity
+        disk_surface = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
         for rel in mono.data.keys():
-            pygame.draw.rect(alpha_surface, rgba, world_to_screen(add_coord(disk_world, rel), vp))
+            pygame.draw.rect(disk_surface, rgba, world_to_screen(add_coord(disk_world, rel), vp))
+        alpha_surface.blit(disk_surface, (0, 0))
     surface.blit(alpha_surface, (0, 0))
 
 
