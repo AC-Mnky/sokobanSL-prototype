@@ -489,7 +489,7 @@ def render_frame(surface: pygame.Surface, ctx: AppCtx, font: pygame.font.Font) -
         solver_color = TXT_NO_SOLUTION
 
     lines = [
-        ("Q:back WASD/Arrows:move R:reset Z:undo H:solver L:editor Ctrl+S:save", TXT),
+        ("Esc/Q:back WASD/Arrows:move R:reset Z:undo H:solver L:editor Ctrl+S:save", TXT),
         (
             f"solver={ctx.solver_session.status} steps={ctx.solver_session.steps} searched={ctx.solver_session.searched_state_count} time={ctx.solver_session.elapsed_seconds:.3f}s",
             solver_color,

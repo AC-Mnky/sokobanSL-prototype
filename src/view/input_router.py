@@ -72,6 +72,15 @@ def _undo(ctx: AppCtx) -> None:
     _refresh_level_cleared(ctx)
 
 
+def _return_to_select_level(ctx: AppCtx) -> None:
+    ctx.mode = "select_level"
+    ctx.preview_stack.clear()
+    ctx.level_cleared = False
+    ctx.editor_mode = False
+    stop_solver(ctx)
+    refresh_levels(ctx)
+
+
 def _handle_play_click(ctx: AppCtx, pos: tuple[int, int], surface: pygame.Surface) -> None:
     if ctx.runtime_state is None:
         return
@@ -416,14 +425,15 @@ def handle_event(ctx: AppCtx, event: pygame.event.Event, surface: pygame.Surface
         return False
     if event.type not in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION, pygame.MOUSEWHEEL):
         return False
-    if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-        ctx.running = False
-        return False
-
+    
     if ctx.mode == "select_level":
-        if event.type == pygame.KEYDOWN and event.key == pygame.K_n:
-            export_builtin_and_refresh(ctx)
-            return False
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                ctx.running = False
+                return False
+            if event.key == pygame.K_n:
+                export_builtin_and_refresh(ctx)
+                return False
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             refresh_levels(ctx)
             try_enter_level_by_click(ctx, event.pos, surface)
@@ -443,13 +453,8 @@ def handle_event(ctx: AppCtx, event: pygame.event.Event, surface: pygame.Surface
         return _handle_editor_right_click(ctx, event.pos, surface)
 
     if event.type == pygame.KEYDOWN:
-        if event.key == pygame.K_q:
-            ctx.mode = "select_level"
-            ctx.preview_stack.clear()
-            ctx.level_cleared = False
-            ctx.editor_mode = False
-            stop_solver(ctx)
-            refresh_levels(ctx)
+        if event.key == pygame.K_q or event.key == pygame.K_ESCAPE:
+            _return_to_select_level(ctx)
             return False
         if event.key == pygame.K_l:
             ctx.editor_mode = not ctx.editor_mode
