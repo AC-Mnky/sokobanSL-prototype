@@ -33,13 +33,20 @@ class PreviewLayer:
 
 @dataclass(slots=True)
 class DragPayload:
-    kind: Literal["state", "buttons", "target", "palette"]
+    kind: Literal["state", "buttons", "target", "palette", "selection"]
     source_coord: Coord | None = None
     state_mono: MonoData | None = None
     buttons: list[ButtonData] = field(default_factory=list)
     target: TargetData | None = None
     palette_kind: Literal["air", "wall", "player", "box", "disk", "s_button", "l_button", "player_target", "box_target"] | None = None
     palette_color: int = 0
+
+    # Selection drag (mouse left) payload.
+    # All coords are relative to the selection's top-left.
+    selection_size: tuple[int, int] | None = None  # (x_len, y_len)
+    selection_press_rel: Coord | None = None  # press cell offset relative to selection top-left
+    selection_state: State | None = None  # relative runtime sub-state snapshot
+    selection_static: StaticState | None = None  # relative static sub-state snapshot
 
 
 @dataclass(slots=True)

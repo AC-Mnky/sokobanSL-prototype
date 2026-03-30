@@ -326,13 +326,14 @@ def _begin_mouse_session(ctx: AppCtx, pos: tuple[int, int], surface: pygame.Surf
     if ctx.runtime_state is None or ctx.static_state is None:
         return
     world_vp = build_viewport(surface, ctx.runtime_state, EDITOR_RIGHT_PANEL if ctx.editor_mode else 0)
+    press_coord = screen_to_world(pos, world_vp)
     session = DragSession(
         active=True,
         press_pos=pos,
-        press_coord=screen_to_world(pos, world_vp),
+        press_coord=press_coord,
         moved_far=False,
         payload=None,
-        hover_coord=None,
+        hover_coord=press_coord,
         drag_offset=(0, 0),
     )
     if not ctx.editor_mode:
@@ -354,6 +355,42 @@ def _begin_mouse_session(ctx: AppCtx, pos: tuple[int, int], surface: pygame.Surf
         return
     coord = session.press_coord
     if coord is not None:
+        # If there's a committed middle-button selection and the press is inside it,
+        # dragging should move the whole region (not a single cell object).
+        if ctx.middle_select_anchor is not None and ctx.middle_select_size is not None:
+            x0, y0 = ctx.middle_select_anchor
+            x_len, y_len = ctx.middle_select_size
+            if x0 <= coord[0] < x0 + x_len and y0 <= coord[1] < y0 + y_len:
+                cell_rect = world_to_screen(coord, world_vp)
+                session.drag_offset = (cell_rect.centerx - pos[0], cell_rect.centery - pos[1])
+
+                press_rel = (coord[0] - x0, coord[1] - y0)
+                state_sub = {}
+                targets_sub: dict[tuple[int, int], TargetData] = {}
+                buttons_sub: dict[tuple[int, int], list[ButtonData]] = {}
+
+                for rx in range(x_len):
+                    for ry in range(y_len):
+                        abs_coord = (x0 + rx, y0 + ry)
+                        if abs_coord in ctx.runtime_state:
+                            state_sub[(rx, ry)] = clone_mono(ctx.runtime_state.get(abs_coord))
+                        if abs_coord in ctx.static_state.targets:
+                            t = ctx.static_state.targets[abs_coord]
+                            targets_sub[(rx, ry)] = TargetData(required_is_controllable=t.required_is_controllable, required_color=t.required_color)
+                        if abs_coord in ctx.static_state.buttons:
+                            moved = ctx.static_state.buttons[abs_coord]
+                            buttons_sub[(rx, ry)] = [ButtonData(button_type=b.button_type, color=b.color) for b in moved]
+
+                session.payload = DragPayload(
+                    kind="selection",
+                    selection_size=(x_len, y_len),
+                    selection_press_rel=press_rel,
+                    selection_state=state_sub,
+                    selection_static=StaticState(targets=targets_sub, buttons=buttons_sub),
+                )
+                ctx.drag_session = session
+                return
+
         mono = ctx.runtime_state.get(coord)
         cell_rect = world_to_screen(coord, world_vp)
         session.drag_offset = (cell_rect.centerx - pos[0], cell_rect.centery - pos[1])
@@ -544,6 +581,34 @@ def _apply_editor_drop(ctx: AppCtx, pos: tuple[int, int], surface: pygame.Surfac
     old_state = clone_state(ctx.runtime_state) or {}
     old_static = clone_static_state(ctx.static_state) or ctx.static_state
     changed = False
+
+    if payload.kind == "selection":
+        if payload.selection_press_rel is None or payload.selection_size is None:
+            return False
+        if ctx.middle_select_anchor is None or ctx.middle_select_size is None:
+            return False
+
+        # Ctrl+X on the committed selection region first (save to clipboard + clear region).
+        _save_committed_selection_to_clipboard(ctx)
+        cut_changed = _clear_committed_selection(ctx)
+
+        if is_delete:
+            _cancel_middle_selection(ctx)
+            return cut_changed
+
+        assert dst is not None
+
+        # Ctrl+V onto the new selection region.
+        press_rel_x, press_rel_y = payload.selection_press_rel
+        new_anchor = (dst[0] - press_rel_x, dst[1] - press_rel_y)
+
+        ctx.middle_select_anchor = new_anchor
+        ctx.middle_select_size = payload.selection_size
+
+        paste_changed = _apply_clipboard_to_selection(ctx, payload.selection_size)
+        _cancel_middle_selection(ctx)
+        return cut_changed or paste_changed
+
     if payload.kind == "state" and payload.source_coord is not None:
         src = payload.source_coord
         if is_delete:

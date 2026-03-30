@@ -416,7 +416,70 @@ def _draw_drag_preview(surface: pygame.Surface, ctx: AppCtx) -> None:
     mx, my = pygame.mouse.get_pos()
     center_x = mx + ctx.drag_session.drag_offset[0]
     center_y = my + ctx.drag_session.drag_offset[1]
-    size = max(6, vp.cell)
+    cell_px = max(6, vp.cell)
+
+    if payload.kind == "selection":
+        if payload.selection_size is None or payload.selection_press_rel is None:
+            return
+        if payload.selection_state is None or payload.selection_static is None:
+            return
+
+        x_len, y_len = payload.selection_size
+        press_rel_x, press_rel_y = payload.selection_press_rel
+        sel_w = x_len * cell_px
+        sel_h = y_len * cell_px
+        # Align the press cell center to the mouse-aligned center point.
+        blit_x = int(center_x - (press_rel_x * cell_px + cell_px // 2))
+        blit_y = int(center_y - (press_rel_y * cell_px + cell_px // 2))
+        rect = pygame.Rect(blit_x, blit_y, sel_w, sel_h)
+
+        preview = pygame.Surface((sel_w, sel_h), pygame.SRCALPHA)
+
+        # 1) buttons under objects
+        for rel, buttons in payload.selection_static.buttons.items():
+            rx, ry = rel
+            cell_rect = pygame.Rect(rx * cell_px, ry * cell_px, cell_px, cell_px)
+            if not buttons:
+                continue
+            n = len(buttons)
+            slot_w = max(1, cell_rect.width // n)
+            total_w = slot_w * n
+            start_x = cell_rect.x + (cell_rect.width - total_w) // 2
+            for i, b in enumerate(buttons):
+                slot = pygame.Rect(start_x + i * slot_w, cell_rect.y, slot_w, cell_rect.height)
+                color = _scale_color(_base_color_by_index(b.color), 1.05)
+                _draw_button_glyph(preview, slot, b.button_type.upper(), color)
+
+        # 2) runtime icons
+        for rx in range(x_len):
+            for ry in range(y_len):
+                local_rect = pygame.Rect(rx * cell_px, ry * cell_px, cell_px, cell_px)
+                mono = payload.selection_state.get((rx, ry))
+                if mono is None or mono.is_empty:
+                    _draw_editor_icon(preview, local_rect, "air", 0)
+                elif mono.is_wall:
+                    _draw_editor_icon(preview, local_rect, "wall", mono.color)
+                elif mono.is_controllable:
+                    _draw_editor_icon(preview, local_rect, "player", mono.color)
+                elif mono.data is not None:
+                    _draw_editor_icon(preview, local_rect, "disk", mono.color)
+                else:
+                    _draw_editor_icon(preview, local_rect, "box", mono.color)
+
+        # 3) target overlays
+        for rel, target in payload.selection_static.targets.items():
+            rx, ry = rel
+            cell_rect = pygame.Rect(rx * cell_px, ry * cell_px, cell_px, cell_px)
+            t_color = _scale_color(_base_color_by_index(target.required_color), 1.05)
+            pygame.draw.rect(preview, t_color, cell_rect, 2)
+            if target.required_is_controllable:
+                _draw_solid_eyes(preview, cell_rect, t_color)
+
+        preview.set_alpha(128)
+        surface.blit(preview, rect.topleft)
+        return
+
+    size = cell_px
     rect = pygame.Rect(center_x - size // 2, center_y - size // 2, size, size)
     preview = pygame.Surface((size, size), pygame.SRCALPHA)
     local_rect = pygame.Rect(0, 0, size, size)
@@ -448,6 +511,38 @@ def _draw_middle_selection(surface: pygame.Surface, ctx: AppCtx, vp: Viewport) -
     if ctx.runtime_state is None:
         return
 
+    # When dragging a whole selection (mouse left on selection),
+    # show the hint box at the destination anchor and keep following.
+    if (
+        ctx.drag_session.active
+        and ctx.drag_session.payload is not None
+        and ctx.drag_session.payload.kind == "selection"
+        and ctx.drag_session.payload.selection_size is not None
+        and ctx.drag_session.payload.selection_press_rel is not None
+    ):
+        # Selection-drag hint should be continuous and exactly cover the drag preview.
+        # The preview position uses mouse pixel coordinates + drag_offset (continuous),
+        # while hover_coord is grid-snapped (discrete), so we must not base the hint on hover_coord.
+        cell_px = max(6, vp.cell)
+        x_len, y_len = ctx.drag_session.payload.selection_size
+        press_rel_x, press_rel_y = ctx.drag_session.payload.selection_press_rel
+        mx, my = pygame.mouse.get_pos()
+        center_x = mx + ctx.drag_session.drag_offset[0]
+        center_y = my + ctx.drag_session.drag_offset[1]
+
+        sel_w = x_len * cell_px
+        sel_h = y_len * cell_px
+        blit_x = int(center_x - (press_rel_x * cell_px + cell_px // 2))
+        blit_y = int(center_y - (press_rel_y * cell_px + cell_px // 2))
+        if sel_w <= 0 or sel_h <= 0:
+            return
+
+        alpha = 64  # 25% opacity (=不透明度)
+        box = pygame.Surface((sel_w, sel_h), pygame.SRCALPHA)
+        box.fill((255, 255, 255, alpha))
+        surface.blit(box, (blit_x, blit_y))
+        return
+
     if ctx.middle_select_dragging and ctx.middle_select_press_coord is not None:
         p = ctx.middle_select_press_coord
         h = ctx.middle_select_hover_coord or p
@@ -469,7 +564,7 @@ def _draw_middle_selection(surface: pygame.Surface, ctx: AppCtx, vp: Viewport) -
     if screen_rect.width <= 0 or screen_rect.height <= 0:
         return
 
-    # 25% opacity white fill
+    # 25% opacity white fill (=不透明度)
     alpha = 64  # 255 * 0.25
     box = pygame.Surface((screen_rect.width, screen_rect.height), pygame.SRCALPHA)
     box.fill((255, 255, 255, alpha))
