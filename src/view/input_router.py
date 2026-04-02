@@ -752,7 +752,8 @@ def handle_event(ctx: AppCtx, event: pygame.event.Event, surface: pygame.Surface
             _cancel_middle_selection(ctx)
             return False
         if event.key == pygame.K_s and (event.mod & pygame.KMOD_CTRL):
-            _save_current_level(ctx)
+            if ctx.editor_mode:
+                _save_current_level(ctx)
             return False
 
         if ctx.editor_mode:
