@@ -103,5 +103,7 @@ class AppCtx:
     clipboard: dict[tuple[int, int], tuple[State, StaticState]] = field(default_factory=dict)
     clipboard_last_key: tuple[int, int] | None = None
     running: bool = True
+    # Z 长按连续撤回：按下后首次自动撤回的目标时刻（ms，pygame.get_ticks）；None 表示未在长按序列中
+    undo_z_next_repeat_at: int | None = None
     # cached per frame
     last_level_button_rects: list[pygame.Rect] = field(default_factory=list)

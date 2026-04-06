@@ -25,6 +25,8 @@ KEY_TO_ACTION: dict[int, Action] = {
     pygame.K_RIGHT: (1, 0),
 }
 EDITOR_SCROLL_STEP = 36
+UNDO_Z_REPEAT_DELAY_MS = 200
+UNDO_Z_REPEAT_INTERVAL_MS = 100
 
 
 def _cancel_middle_selection(ctx: AppCtx) -> None:
@@ -263,11 +265,28 @@ def _undo(ctx: AppCtx) -> None:
     _cancel_middle_selection(ctx)
 
 
+def tick_undo_z_repeat(ctx: AppCtx) -> bool:
+    """After Z held for UNDO_Z_REPEAT_DELAY_MS, undo every UNDO_Z_REPEAT_INTERVAL_MS until release."""
+    if ctx.mode != "playing" or ctx.undo_z_next_repeat_at is None:
+        return False
+    if not pygame.key.get_pressed()[pygame.K_z]:
+        ctx.undo_z_next_repeat_at = None
+        return False
+    now = pygame.time.get_ticks()
+    moved = False
+    while now >= ctx.undo_z_next_repeat_at:
+        _undo(ctx)
+        ctx.undo_z_next_repeat_at += UNDO_Z_REPEAT_INTERVAL_MS
+        moved = True
+    return moved
+
+
 def _return_to_select_level(ctx: AppCtx) -> None:
     ctx.mode = "select_level"
     ctx.preview_stack.clear()
     ctx.level_cleared = False
     ctx.editor_mode = False
+    ctx.undo_z_next_repeat_at = None
     _cancel_middle_selection(ctx)
     stop_solver(ctx)
     refresh_levels(ctx)
@@ -697,7 +716,14 @@ def handle_event(ctx: AppCtx, event: pygame.event.Event, surface: pygame.Surface
     if event.type == pygame.QUIT:
         ctx.running = False
         return False
-    if event.type not in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION, pygame.MOUSEWHEEL):
+    if event.type not in (
+        pygame.KEYDOWN,
+        pygame.KEYUP,
+        pygame.MOUSEBUTTONDOWN,
+        pygame.MOUSEBUTTONUP,
+        pygame.MOUSEMOTION,
+        pygame.MOUSEWHEEL,
+    ):
         return False
     
     if ctx.mode == "select_level":
@@ -714,6 +740,10 @@ def handle_event(ctx: AppCtx, event: pygame.event.Event, surface: pygame.Surface
         return False
 
     # playing
+    if event.type == pygame.KEYUP and event.key == pygame.K_z:
+        ctx.undo_z_next_repeat_at = None
+        return False
+
     if event.type == pygame.MOUSEWHEEL and ctx.editor_mode:
         ctx.editor_panel_scroll = max(
             0,
@@ -792,7 +822,10 @@ def handle_event(ctx: AppCtx, event: pygame.event.Event, surface: pygame.Surface
             _reset_level(ctx)
             return True
         if event.key == pygame.K_z:
+            if getattr(event, "repeat", False):
+                return False
             _undo(ctx)
+            ctx.undo_z_next_repeat_at = pygame.time.get_ticks() + UNDO_Z_REPEAT_DELAY_MS
             return True
         if event.key == pygame.K_h:
             start_or_restart_solver(ctx)

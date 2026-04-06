@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pygame
 
-from src.view.input_router import handle_event
+from src.view.input_router import handle_event, tick_undo_z_repeat
 from src.view.level_select import refresh_levels
 from src.view.render import render_frame
 from src.view.solver_session import advance_solver_once
@@ -36,6 +36,8 @@ def run_app(ctx: AppCtx) -> None:
         moved_this_frame = False
         for event in pygame.event.get():
             moved_this_frame = handle_event(ctx, event, surface) or moved_this_frame
+        if ctx.mode == "playing":
+            moved_this_frame = tick_undo_z_repeat(ctx) or moved_this_frame
 
         now = pygame.time.get_ticks()
         if ctx.mode == "select_level" and now >= next_select_refresh_at:
