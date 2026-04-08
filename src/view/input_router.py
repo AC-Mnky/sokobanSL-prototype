@@ -25,8 +25,12 @@ KEY_TO_ACTION: dict[int, Action] = {
     pygame.K_RIGHT: (1, 0),
 }
 EDITOR_SCROLL_STEP = 36
-UNDO_Z_REPEAT_DELAY_MS = 200
-UNDO_Z_REPEAT_INTERVAL_MS = 100
+KEY_REPEAT_DELAY_MS = 200
+KEY_REPEAT_INTERVAL_MS = 100
+UNDO_Z_REPEAT_DELAY_MS = KEY_REPEAT_DELAY_MS
+UNDO_Z_REPEAT_INTERVAL_MS = KEY_REPEAT_INTERVAL_MS
+MOVE_REPEAT_DELAY_MS = KEY_REPEAT_DELAY_MS
+MOVE_REPEAT_INTERVAL_MS = KEY_REPEAT_INTERVAL_MS
 
 
 def _cancel_middle_selection(ctx: AppCtx) -> None:
@@ -265,19 +269,72 @@ def _undo(ctx: AppCtx) -> None:
     _cancel_middle_selection(ctx)
 
 
+def _tick_key_repeat(
+    next_repeat_at: int | None,
+    *,
+    is_pressed: callable,
+    interval_ms: int,
+    step: callable,
+) -> tuple[bool, int | None]:
+    """
+    Generic "key hold repeat" helper.
+
+    Returns (moved, next_repeat_at). When key is released or step signals stop, next_repeat_at becomes None.
+    """
+    if next_repeat_at is None:
+        return False, None
+    if not is_pressed():
+        return False, None
+    now = pygame.time.get_ticks()
+    moved = False
+    while now >= next_repeat_at:
+        if not step():
+            return moved, None
+        next_repeat_at += interval_ms
+        moved = True
+    return moved, next_repeat_at
+
+
 def tick_undo_z_repeat(ctx: AppCtx) -> bool:
     """After Z held for UNDO_Z_REPEAT_DELAY_MS, undo every UNDO_Z_REPEAT_INTERVAL_MS until release."""
     if ctx.mode != "playing" or ctx.undo_z_next_repeat_at is None:
         return False
-    if not pygame.key.get_pressed()[pygame.K_z]:
-        ctx.undo_z_next_repeat_at = None
+
+    moved, next_at = _tick_key_repeat(
+        ctx.undo_z_next_repeat_at,
+        is_pressed=lambda: pygame.key.get_pressed()[pygame.K_z],
+        interval_ms=UNDO_Z_REPEAT_INTERVAL_MS,
+        step=lambda: (False if not ctx.history_stack else (_undo(ctx) or True)),
+    )
+    ctx.undo_z_next_repeat_at = next_at
+    return moved
+
+
+def tick_move_repeat(ctx: AppCtx) -> bool:
+    """After move key held for MOVE_REPEAT_DELAY_MS, apply movement every MOVE_REPEAT_INTERVAL_MS until release."""
+    if ctx.mode != "playing" or ctx.level_cleared:
+        ctx.move_hold_key = None
+        ctx.move_next_repeat_at = None
         return False
-    now = pygame.time.get_ticks()
-    moved = False
-    while now >= ctx.undo_z_next_repeat_at:
-        _undo(ctx)
-        ctx.undo_z_next_repeat_at += UNDO_Z_REPEAT_INTERVAL_MS
-        moved = True
+    if ctx.move_hold_key is None or ctx.move_next_repeat_at is None:
+        return False
+
+    action = KEY_TO_ACTION.get(ctx.move_hold_key)
+    if action is None:
+        ctx.move_hold_key = None
+        ctx.move_next_repeat_at = None
+        return False
+
+    key = ctx.move_hold_key
+    moved, next_at = _tick_key_repeat(
+        ctx.move_next_repeat_at,
+        is_pressed=lambda: pygame.key.get_pressed()[key],
+        interval_ms=MOVE_REPEAT_INTERVAL_MS,
+        step=lambda: (_apply_substantive_action(ctx, action) or (not ctx.level_cleared)),
+    )
+    ctx.move_next_repeat_at = next_at
+    if next_at is None:
+        ctx.move_hold_key = None
     return moved
 
 
@@ -287,6 +344,8 @@ def _return_to_select_level(ctx: AppCtx) -> None:
     ctx.level_cleared = False
     ctx.editor_mode = False
     ctx.undo_z_next_repeat_at = None
+    ctx.move_hold_key = None
+    ctx.move_next_repeat_at = None
     _cancel_middle_selection(ctx)
     stop_solver(ctx)
     refresh_levels(ctx)
@@ -743,6 +802,19 @@ def handle_event(ctx: AppCtx, event: pygame.event.Event, surface: pygame.Surface
     if event.type == pygame.KEYUP and event.key == pygame.K_z:
         ctx.undo_z_next_repeat_at = None
         return False
+    if event.type == pygame.KEYUP and event.key in KEY_TO_ACTION:
+        if ctx.move_hold_key == event.key:
+            # Try seamless fallback to another held movement key.
+            pressed = pygame.key.get_pressed()
+            for k in (pygame.K_w, pygame.K_UP, pygame.K_s, pygame.K_DOWN, pygame.K_a, pygame.K_LEFT, pygame.K_d, pygame.K_RIGHT):
+                if pressed[k]:
+                    ctx.move_hold_key = k
+                    ctx.move_next_repeat_at = pygame.time.get_ticks() + MOVE_REPEAT_INTERVAL_MS
+                    break
+            else:
+                ctx.move_hold_key = None
+                ctx.move_next_repeat_at = None
+        return False
 
     if event.type == pygame.MOUSEWHEEL and ctx.editor_mode:
         ctx.editor_panel_scroll = max(
@@ -816,7 +888,11 @@ def handle_event(ctx: AppCtx, event: pygame.event.Event, surface: pygame.Surface
         if event.key in KEY_TO_ACTION:
             if ctx.level_cleared:
                 return False
+            if getattr(event, "repeat", False):
+                return False
             _apply_substantive_action(ctx, KEY_TO_ACTION[event.key])
+            ctx.move_hold_key = event.key
+            ctx.move_next_repeat_at = pygame.time.get_ticks() + MOVE_REPEAT_DELAY_MS
             return True
         if event.key == pygame.K_r:
             _reset_level(ctx)

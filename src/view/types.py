@@ -105,5 +105,8 @@ class AppCtx:
     running: bool = True
     # Z 长按连续撤回：按下后首次自动撤回的目标时刻（ms，pygame.get_ticks）；None 表示未在长按序列中
     undo_z_next_repeat_at: int | None = None
+    # 长按移动键连发：当前被“锁定”的移动键，以及下一次触发移动的目标时刻（ms）
+    move_hold_key: int | None = None
+    move_next_repeat_at: int | None = None
     # cached per frame
     last_level_button_rects: list[pygame.Rect] = field(default_factory=list)
