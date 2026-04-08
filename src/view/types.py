@@ -75,6 +75,9 @@ class AppCtx:
     levels_path: Path = Path("data/levels")
     levels: list[Level] = field(default_factory=list)
     level_names: list[str] = field(default_factory=list)
+    # Level select: (chapter heading or None, number of buttons). Sum of counts == len(levels).
+    level_select_sections: list[tuple[str | None, int]] = field(default_factory=list)
+    level_select_scroll_y: int = 0
     current_level_idx: int | None = None
     static_state: StaticState | None = None
     runtime_state: State | None = None

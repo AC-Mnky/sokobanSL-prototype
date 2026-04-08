@@ -125,6 +125,7 @@ def test_ctrl_s_overwrites_current_level(tmp_path):
         mode="playing",
         levels_path=levels_path,
         levels=levels,
+        level_names=["level_001", "level_002"],
         current_level_idx=1,
         editor_mode=True,
         static_state=StaticState(targets={(5, 5): TargetData(required_is_controllable=False, required_color=0)}, buttons={}),

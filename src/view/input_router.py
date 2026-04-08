@@ -4,7 +4,7 @@ import pygame
 
 from src.core_step import apply_action
 from src.goals import is_goal
-from src.level_io import save_level_by_index
+from src.level_io import save_level_by_stem
 from src.state_utils import (
     air_mono,
     clone_mono,
@@ -15,7 +15,12 @@ from src.state_utils import (
     sub_coord,
 )
 from src.types import Action, ButtonData, Level, MonoData, StaticState, TargetData
-from src.view.level_select import export_builtin_and_refresh, refresh_levels, try_enter_level_by_click
+from src.view.level_select import (
+    apply_level_select_wheel,
+    export_builtin_and_refresh,
+    refresh_levels,
+    try_enter_level_by_click,
+)
 from src.view.preview import clear_preview, pop_preview, push_preview_if_data, resolve_visible_mono
 from src.view.render import EDITOR_RIGHT_PANEL, build_viewport, screen_to_world, world_to_screen
 from src.view.solver_session import start_or_restart_solver, stop_solver
@@ -809,7 +814,10 @@ def _save_current_level(ctx: AppCtx) -> None:
         static_state=clone_static_state(ctx.static_state) or ctx.static_state,
         initial_state=clone_state(ctx.runtime_state) or {},
     )
-    if save_level_by_index(ctx.levels_path, ctx.current_level_idx, level):
+    if ctx.current_level_idx >= len(ctx.level_names):
+        return
+    stem = ctx.level_names[ctx.current_level_idx]
+    if save_level_by_stem(ctx.levels_path, stem, level):
         if 0 <= ctx.current_level_idx < len(ctx.levels):
             ctx.levels[ctx.current_level_idx] = level
         ctx.level_saved = True
@@ -837,8 +845,11 @@ def handle_event(ctx: AppCtx, event: pygame.event.Event, surface: pygame.Surface
             if event.key == pygame.K_n:
                 export_builtin_and_refresh(ctx)
                 return False
+        if event.type == pygame.MOUSEWHEEL:
+            apply_level_select_wheel(ctx, surface, event.y)
+            return False
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            refresh_levels(ctx)
+            refresh_levels(ctx, reset_scroll=False)
             try_enter_level_by_click(ctx, event.pos, surface)
         return False
 

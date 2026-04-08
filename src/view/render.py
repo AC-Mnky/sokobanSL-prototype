@@ -6,7 +6,7 @@ import pygame
 
 from src.state_utils import add_coord
 from src.types import Coord, MonoData, State
-from src.view.level_select import compute_level_button_rects
+from src.view.level_select import compute_level_select_layout, level_select_scroll_max_y
 from src.view.types import AppCtx, EditorPaletteItem, PreviewLayer
 
 BG = (16, 18, 22)
@@ -619,16 +619,26 @@ def _draw_middle_selection(surface: pygame.Surface, ctx: AppCtx, vp: Viewport) -
 def render_frame(surface: pygame.Surface, ctx: AppCtx, font: pygame.font.Font) -> None:
     surface.fill(BG_CLEARED if (ctx.mode == "playing" and ctx.level_cleared) else BG)
     if ctx.mode == "select_level":
-        rects = compute_level_button_rects(len(ctx.levels), surface)
-        ctx.last_level_button_rects = rects
+        rects, chapter_titles, _bottom = compute_level_select_layout(
+            len(ctx.levels),
+            ctx.level_select_sections,
+            surface,
+        )
+        mx = level_select_scroll_max_y(ctx, surface)
+        ctx.level_select_scroll_y = min(ctx.level_select_scroll_y, mx)
+        sy = ctx.level_select_scroll_y
+        ctx.last_level_button_rects = [r.move(0, -sy) for r in rects]
+        for title, ty in chapter_titles:
+            surface.blit(font.render(title, True, TXT), (24, ty - sy))
         for i, rect in enumerate(rects):
-            pygame.draw.rect(surface, (56, 62, 74), rect)
-            pygame.draw.rect(surface, GRID, rect, 1)
+            dr = rect.move(0, -sy)
+            pygame.draw.rect(surface, (56, 62, 74), dr)
+            pygame.draw.rect(surface, GRID, dr, 1)
             level_name = f"level_{i + 1:03d}"
             if i < len(ctx.level_names):
                 level_name = ctx.level_names[i]
             txt = font.render(level_name, True, TXT)
-            surface.blit(txt, (rect.x + 8, rect.y + 8))
+            surface.blit(txt, (dr.x + 8, dr.y + 8))
         info = font.render("Select level | N: export builtin", True, TXT)
         surface.blit(info, (12, 8))
         return
