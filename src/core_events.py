@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from src.core_write_commit import commit_writes
-from src.state_utils import add_coord, clone_mono, is_empty_value
+from src.state_utils import add_coord, clone_mono, is_empty_value, is_solid_value
 from src.types import ButtonData, Event, MonoData, State, StaticState
 
 
@@ -35,6 +35,8 @@ def _snapshot_from_disk_region(world: State, disk_data: State, disk_coord: tuple
         if mono is None:
             # Keep previous disk record when world has no cell.
             snapshot[rel] = clone_mono(disk_data.get(rel))
+        elif is_solid_value(mono) and mono.reject_save:
+            snapshot[rel] = clone_mono(disk_data.get(rel))
         else:
             snapshot[rel] = clone_mono(mono)
     return snapshot
@@ -63,7 +65,11 @@ def build_event_writes(state: State, events: list[Event], static_state: StaticSt
                 for rel, value in payload.items():
                     if value is None:
                         continue
-                    write[add_coord(disk_coord, rel)] = clone_mono(value)
+                    world_coord = add_coord(disk_coord, rel)
+                    cur = state.get(world_coord)
+                    if is_solid_value(cur) and cur.reject_load:
+                        continue
+                    write[world_coord] = clone_mono(value)
                 if write:
                     writes.append(write)
     return writes

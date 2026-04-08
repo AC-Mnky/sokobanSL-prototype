@@ -32,6 +32,8 @@ class MonoData:
     is_wall: bool = False
     is_controllable: bool = False
     color: int = 0
+    reject_save: bool = False
+    reject_load: bool = False
     data: Optional["State"] = None
 
 

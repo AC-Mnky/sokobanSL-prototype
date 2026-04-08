@@ -70,3 +70,25 @@ def test_s_disk_snapshot_resolves_region_relative_to_disk_cell():
     assert new_disk is not None and new_disk.data is not None
     assert new_disk.data.get((1, 0)) is not None
     assert new_disk.data[(1, 0)].color == 5
+
+
+def test_s_disk_snapshot_skips_reject_save_cell():
+    disk = MonoData(is_empty=False, is_wall=False, is_controllable=False, color=1, data={(1, 0): box(5)})
+    no_save = box(9)
+    no_save.reject_save = True
+    state = {(2, 1): disk, (3, 1): no_save}
+    writes = build_event_writes(state, [ButtonData("s", 1)], StaticState(targets={}, buttons={}))
+    new_disk = writes[0].get((2, 1))
+    assert new_disk is not None and new_disk.data is not None
+    assert new_disk.data[(1, 0)].color == 5
+
+
+def test_l_write_skips_reject_load_cell():
+    protected = box(3)
+    protected.reject_load = True
+    disk = MonoData(is_empty=False, is_wall=False, is_controllable=False, color=1, data={(1, 0): box(8)})
+    state = {(0, 0): disk, (1, 0): protected}
+    writes = build_event_writes(state, [ButtonData("l", 1)], StaticState(targets={}, buttons={}))
+    assert writes == []
+    out = commit_writes(state, writes)
+    assert out[(1, 0)] is not None and out[(1, 0)].color == 3

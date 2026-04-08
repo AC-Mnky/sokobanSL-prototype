@@ -4,6 +4,7 @@ import pickle
 from pathlib import Path
 
 from src.sample_levels import make_basic_levels
+from src.state_utils import normalize_level_monos
 from src.types import Level
 
 
@@ -26,6 +27,7 @@ def load_levels_with_names(path: str | Path) -> list[tuple[str, Level]]:
     for fp in _iter_level_files(levels_dir):
         with fp.open("rb") as f:
             level = pickle.load(f)
+        normalize_level_monos(level)
         entries.append((fp.stem, level))
     return entries
 

@@ -34,7 +34,7 @@ python -m pytest -q
 - `src/core_step.py`：单步入口 `apply_action()`（移动 + 事件循环）。
 - `src/goals.py`：目标判定。
 - `src/solver_bfs.py`：BFS 生成器求解器。
-- `src/level_io.py`：pickle 关卡读写、内置关卡导出。
+- `src/level_io.py`：pickle 关卡读写、内置关卡导出；读入后对 `MonoData` 递归规范化（兼容旧 pkl 缺少新字段）。
 - `src/sample_levels.py`：最小内置关卡样例。
 - `src/disk_migration.py`：将磁盘 `data` 键从旧版世界坐标转为相对偏移（供一次性迁移脚本使用）。
 
@@ -63,7 +63,9 @@ python -m pytest -q
   - `targets`：目标条件映射。
   - `buttons`：按钮映射（同坐标支持多个按钮）。
 - `MonoData`
-  - `is_empty / is_wall / is_controllable / color / data`。
+  - `is_empty / is_wall / is_controllable / color / reject_save / reject_load / data`。
+  - `reject_save`：实体为真时，S 快照读阶段不读取该世界格，保留磁盘该相对键的旧记录（与「世界格为 None」时行为一致）。
+  - `reject_load`：实体为真时，L 写阶段不向该世界格写入（该格保持当前状态）。
   - `data` 用于磁盘记录态：键为**相对磁盘所在格的偏移**，世界格 = 磁盘位置 + 偏移；主关卡 `State` 的键仍为世界坐标。
 
 ### 单步状态更新
@@ -75,8 +77,8 @@ python -m pytest -q
 ### 事件与写提交
 - 事件触发：`collect_edge_events()`，仅依赖 `is_empty` 的下降沿。
 - 读写轮次：`build_event_writes()` 生成 `writes: list[State]`。
-  - `S` 读取快照时，对每个相对键 `rel` 看世界格 `disk_pos+rel`；若该格当前为 `None`（无格/空），保留磁盘该 `rel` 的旧记录，不用 `None`/空气覆盖。
-  - `L` 把磁盘 `data` 中每个非 `None` 值写回世界格 `disk_pos+rel`。
+  - `S` 读取快照时，对每个相对键 `rel` 看世界格 `disk_pos+rel`；若该格当前为 `None`（无格/空），保留磁盘该 `rel` 的旧记录，不用 `None`/空气覆盖；若该格为实体且 `reject_save`，同样保留旧记录。
+  - `L` 把磁盘 `data` 中每个非 `None` 值写回世界格 `disk_pos+rel`；若目标世界格为实体且 `reject_load`，跳过该坐标。
 - 提交：`commit_writes()`
   - `None` 候选会被过滤。
   - 相同坐标按深比较分组计数，多数决生效。
@@ -119,6 +121,7 @@ python -m pytest -q
   - `H`：启动/重建求解器会话。
   - `L`：切换关卡编辑器模式（on/off）。
   - `Ctrl+S`：仅在编辑器模式开启时生效，覆盖保存当前关卡（保存当前 `state + static_state` 到当前关卡索引），并在界面下方显示一行 `Level Saved`，直到玩家下一次实质性操作。
+  - `[` / `]`：仅在编辑器模式开启时生效，切换鼠标所指格（或已提交的中键框选矩形内所有实体）的 `reject_save` / `reject_load`。
   - 鼠标左键：按下-松开触发；若按下后横向或纵向移动超过半格，预览点击不会触发。
 
 ### 预览规则
@@ -128,6 +131,7 @@ python -m pytest -q
 
 ### 关卡编辑器模式
 - 保留游玩态全部操作（移动、重置、撤回、求解器等）。
+- 实体可带 `reject_save` / `reject_load`：画面上在该格内居中正方形区域用几何笔画显示被斜线（右上到左下）划掉的 `S`、`L` 或 `SL`（同一根斜线）。
 - 左键拖拽支持自动吸附到网格：
   - 若起点有状态物体（包括空气格），拖到终点会与终点状态物体交换；拖到右侧物品栏区域可删除该状态物体。
   - 空气格的细则：拖到 `value is None` 的格子后，起点会变为 `None`；拖到 `key not in state` 的格子或拖到右侧面板删除时，起点会直接从 `state` 字典移除。

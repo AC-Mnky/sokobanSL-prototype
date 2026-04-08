@@ -5,7 +5,15 @@ import pygame
 from src.core_step import apply_action
 from src.goals import is_goal
 from src.level_io import save_level_by_index
-from src.state_utils import air_mono, clone_mono, clone_state, clone_static_state, mono_deep_equal, sub_coord
+from src.state_utils import (
+    air_mono,
+    clone_mono,
+    clone_state,
+    clone_static_state,
+    is_solid_value,
+    mono_deep_equal,
+    sub_coord,
+)
 from src.types import Action, ButtonData, Level, MonoData, StaticState, TargetData
 from src.view.level_select import export_builtin_and_refresh, refresh_levels, try_enter_level_by_click
 from src.view.preview import clear_preview, pop_preview, push_preview_if_data, resolve_visible_mono
@@ -517,6 +525,42 @@ def _is_delete_drop(ctx: AppCtx, anchor_pos: tuple[int, int], surface: pygame.Su
     return panel_rect.collidepoint(anchor_pos)
 
 
+def _editor_toggle_reject_flags(ctx: AppCtx, surface: pygame.Surface, *, toggle_save: bool) -> bool:
+    if not ctx.editor_mode or ctx.runtime_state is None or ctx.static_state is None:
+        return False
+    bounds = _get_committed_selection_bounds(ctx)
+    if bounds is not None:
+        x0, y0, x1, y1 = bounds
+        coords = list(_iter_rect_coords(x0, y0, x1, y1))
+    else:
+        world_vp = build_viewport(surface, ctx.runtime_state, EDITOR_RIGHT_PANEL)
+        c = screen_to_world(pygame.mouse.get_pos(), world_vp)
+        if c is None:
+            return False
+        coords = [c]
+
+    old_state = clone_state(ctx.runtime_state) or {}
+    old_static = clone_static_state(ctx.static_state) or ctx.static_state
+    changed = False
+    for coord in coords:
+        mono = ctx.runtime_state.get(coord)
+        if not is_solid_value(mono):
+            continue
+        assert mono is not None
+        if toggle_save:
+            mono.reject_save = not mono.reject_save
+        else:
+            mono.reject_load = not mono.reject_load
+        changed = True
+
+    if changed:
+        _clear_level_saved(ctx)
+        ctx.history_stack.append((old_state, old_static))
+        stop_solver(ctx)
+        _refresh_level_cleared(ctx)
+    return changed
+
+
 def _apply_palette_to_coord(ctx: AppCtx, payload: DragPayload, coord: tuple[int, int]) -> None:
     if ctx.runtime_state is None or ctx.static_state is None or payload.palette_kind is None:
         return
@@ -857,6 +901,14 @@ def handle_event(ctx: AppCtx, event: pygame.event.Event, surface: pygame.Surface
             if ctx.editor_mode:
                 _save_current_level(ctx)
             return False
+
+        if ctx.editor_mode:
+            if event.key == pygame.K_LEFTBRACKET:
+                _editor_toggle_reject_flags(ctx, surface, toggle_save=True)
+                return False
+            if event.key == pygame.K_RIGHTBRACKET:
+                _editor_toggle_reject_flags(ctx, surface, toggle_save=False)
+                return False
 
         if ctx.editor_mode:
             bounds = _get_committed_selection_bounds(ctx)

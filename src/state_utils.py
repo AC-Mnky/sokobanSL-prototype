@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import MISSING, fields
 from typing import Any, Hashable, Optional
 
-from src.types import ButtonData, Coord, MonoData, State, StaticState, TargetData
+from src.types import ButtonData, Coord, Level, MonoData, State, StaticState, TargetData
 
 
 def clone_mono(mono: Optional[MonoData]) -> Optional[MonoData]:
@@ -14,6 +15,8 @@ def clone_mono(mono: Optional[MonoData]) -> Optional[MonoData]:
         is_wall=mono.is_wall,
         is_controllable=mono.is_controllable,
         color=mono.color,
+        reject_save=mono.reject_save,
+        reject_load=mono.reject_load,
         data=cloned_data,
     )
 
@@ -52,6 +55,8 @@ def mono_deep_equal(a: Optional[MonoData], b: Optional[MonoData]) -> bool:
         and a.is_wall == b.is_wall
         and a.is_controllable == b.is_controllable
         and a.color == b.color
+        and a.reject_save == b.reject_save
+        and a.reject_load == b.reject_load
         and state_deep_equal(a.data, b.data)
     )
 
@@ -76,6 +81,8 @@ def freeze_mono(mono: Optional[MonoData]) -> Hashable:
             mono.is_wall,
             mono.is_controllable,
             mono.color,
+            mono.reject_save,
+            mono.reject_load,
             ("state-none",),
         )
     return (
@@ -84,6 +91,8 @@ def freeze_mono(mono: Optional[MonoData]) -> Hashable:
         mono.is_wall,
         mono.is_controllable,
         mono.color,
+        mono.reject_save,
+        mono.reject_load,
         freeze_state(mono.data),
     )
 
@@ -109,7 +118,45 @@ def ensure_coord_none(state: State, coord: Coord) -> None:
 
 def air_mono() -> MonoData:
     # Runtime "empty" is represented as MonoData(is_empty=True), not None.
-    return MonoData(is_empty=True, is_wall=False, is_controllable=False, color=0, data=None)
+    return MonoData(
+        is_empty=True,
+        is_wall=False,
+        is_controllable=False,
+        color=0,
+        reject_save=False,
+        reject_load=False,
+        data=None,
+    )
+
+
+def normalize_mono(mono: MonoData) -> MonoData:
+    """Rebuild MonoData so new fields exist (old pickles may omit slots). Recurses into data."""
+    kw: dict[str, Any] = {}
+    for f in fields(MonoData):
+        try:
+            v: Any = getattr(mono, f.name)
+        except AttributeError:
+            if f.default is not MISSING:
+                v = f.default
+            elif f.default_factory is not MISSING:
+                v = f.default_factory()
+            else:
+                raise
+        if f.name == "data" and v is not None:
+            v = {c: normalize_mono(m) if m is not None else None for c, m in v.items()}
+        kw[f.name] = v
+    return MonoData(**kw)
+
+
+def normalize_state_monos(state: State) -> None:
+    for coord in list(state.keys()):
+        m = state.get(coord)
+        if m is not None:
+            state[coord] = normalize_mono(m)
+
+
+def normalize_level_monos(level: Level) -> None:
+    normalize_state_monos(level.initial_state)
 
 
 def ensure_coord_air(state: State, coord: Coord) -> None:

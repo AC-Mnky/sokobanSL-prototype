@@ -143,14 +143,18 @@ def _draw_world(surface: pygame.Surface, state: State, vp: Viewport) -> None:
         base = _base_color_by_index(mono.color)
         if mono.is_wall:
             _draw_editor_icon(surface, rect, "wall", mono.color)
+            _draw_reject_save_load_overlay(surface, rect, mono)
             continue
         if mono.is_controllable:
             _draw_editor_icon(surface, rect, "player", mono.color)
+            _draw_reject_save_load_overlay(surface, rect, mono)
             continue
         if mono.data is not None:
             _draw_editor_icon(surface, rect, "disk", mono.color)
+            _draw_reject_save_load_overlay(surface, rect, mono)
             continue
         _draw_editor_icon(surface, rect, "box", mono.color)
+        _draw_reject_save_load_overlay(surface, rect, mono)
 
 
 def _draw_buttons_under_objects(surface: pygame.Surface, ctx: AppCtx, vp: Viewport) -> None:
@@ -228,6 +232,37 @@ def _draw_button_glyph(
     pygame.draw.line(surface, color, (x0, ym), (x1, ym), stroke)
     pygame.draw.line(surface, color, (x1, ym), (x1, y1), stroke)
     pygame.draw.line(surface, color, (x1, y1), (x0, y1), stroke)
+
+
+def _draw_reject_save_load_overlay(surface: pygame.Surface, rect: pygame.Rect, mono: MonoData) -> None:
+    if mono.is_empty or (not mono.reject_save and not mono.reject_load):
+        return
+    pad = max(2, min(rect.w, rect.h) // 10)
+    side = max(6, min(rect.w, rect.h) - 2 * pad)
+    sq = pygame.Rect(0, 0, side, side)
+    sq.centerx = rect.centerx
+    sq.centery = rect.centery
+    color = (248, 252, 255)
+    stroke = max(1, min(sq.w, sq.h) // 8)
+    if mono.reject_save and mono.reject_load:
+        mid_x = sq.x + sq.w // 2
+        left = pygame.Rect(sq.x, sq.y, mid_x - sq.x, sq.h)
+        right = pygame.Rect(mid_x, sq.y, sq.right - mid_x, sq.h)
+        _draw_button_glyph(surface, left, "S", color)
+        _draw_button_glyph(surface, right, "L", color)
+    elif mono.reject_save:
+        _draw_button_glyph(surface, sq, "S", color)
+    else:
+        _draw_button_glyph(surface, sq, "L", color)
+    # Slash: top-right to bottom-left (\)
+    inset = max(1, stroke // 2)
+    pygame.draw.line(
+        surface,
+        color,
+        (sq.right - inset, sq.top + inset),
+        (sq.left + inset, sq.bottom - inset),
+        stroke,
+    )
 
 
 def _draw_preview_over_map(surface: pygame.Surface, preview_stack: list[PreviewLayer], vp: Viewport) -> None:
@@ -471,6 +506,8 @@ def _draw_drag_preview(surface: pygame.Surface, ctx: AppCtx) -> None:
                     _draw_editor_icon(preview, local_rect, "disk", mono.color)
                 else:
                     _draw_editor_icon(preview, local_rect, "box", mono.color)
+                if mono is not None and not mono.is_empty:
+                    _draw_reject_save_load_overlay(preview, local_rect, mono)
 
         # 3) target overlays
         for rel, target in payload.selection_static.targets.items():
@@ -501,6 +538,8 @@ def _draw_drag_preview(surface: pygame.Surface, ctx: AppCtx) -> None:
             _draw_editor_icon(preview, local_rect, "disk", mono.color)
         else:
             _draw_editor_icon(preview, local_rect, "box", mono.color)
+        if not mono.is_empty:
+            _draw_reject_save_load_overlay(preview, local_rect, mono)
     elif payload.kind == "buttons" and payload.buttons:
         first = payload.buttons[0]
         _draw_editor_icon(preview, local_rect, "s_button" if first.button_type == "s" else "l_button", first.color)
@@ -623,7 +662,10 @@ def render_frame(surface: pygame.Surface, ctx: AppCtx, font: pygame.font.Font) -
         solver_color = TXT_NO_SOLUTION
 
     lines = [
-        ("Esc/Q:back WASD/Arrows:move(hold:repeat) R:reset Z:undo(hold:repeat) H:solver L:editor Ctrl+S(editor):save", TXT),
+        (
+            "Esc/Q:back WASD:move(hold) R:reset Z:undo(hold) H:solver L:editor Ctrl+S(save) [/]:rejS/L(editor)",
+            TXT,
+        ),
         (
             f"solver={ctx.solver_session.status} steps={ctx.solver_session.steps} searched={ctx.solver_session.searched_state_count} time={ctx.solver_session.elapsed_seconds:.3f}s",
             solver_color,
