@@ -13,6 +13,9 @@ BG = (16, 18, 22)
 BG_CLEARED = (22, 24, 30)
 GRID = (40, 44, 52)
 TXT = (220, 220, 220)
+LEVEL_HARD_TXT = (255, 110, 110)
+LEVEL_HARD_BTN_FILL = (72, 38, 42)
+LEVEL_HARD_BTN_LINE = (190, 70, 82)
 TXT_SOLVED = (90, 210, 120)
 TXT_NO_SOLUTION = (235, 80, 80)
 PANEL_BG = (26, 30, 38)
@@ -632,14 +635,18 @@ def render_frame(surface: pygame.Surface, ctx: AppCtx, font: pygame.font.Font) -
             surface.blit(font.render(title, True, TXT), (24, ty - sy))
         for i, rect in enumerate(rects):
             dr = rect.move(0, -sy)
-            pygame.draw.rect(surface, (56, 62, 74), dr)
-            pygame.draw.rect(surface, GRID, dr, 1)
+            hard = i < len(ctx.level_select_hard) and ctx.level_select_hard[i]
+            fill = LEVEL_HARD_BTN_FILL if hard else (56, 62, 74)
+            line_c = LEVEL_HARD_BTN_LINE if hard else GRID
+            pygame.draw.rect(surface, fill, dr)
+            pygame.draw.rect(surface, line_c, dr, 1)
             level_name = f"level_{i + 1:03d}"
             if i < len(ctx.level_names):
                 level_name = ctx.level_names[i]
-            txt = font.render(level_name, True, TXT)
+            txt_color = LEVEL_HARD_TXT if hard else TXT
+            txt = font.render(level_name, True, txt_color)
             surface.blit(txt, (dr.x + 8, dr.y + 8))
-        info = font.render("Select level | N: export builtin", True, TXT)
+        info = font.render("Select level | Red levels are harder ones | N: export builtin", True, TXT)
         surface.blit(info, (12, 8))
         return
 

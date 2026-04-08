@@ -14,12 +14,13 @@ SELECT_LEVEL_SCROLL_STEP = 40
 
 def refresh_levels(ctx: AppCtx, *, reset_scroll: bool | None = None) -> None:
     prev_names = tuple(ctx.level_names)
-    entries, sections = load_levels_with_names_and_sections(ctx.levels_path)
+    entries, sections, hard = load_levels_with_names_and_sections(ctx.levels_path)
     ctx.level_names = [name for name, _ in entries]
     ctx.levels = [level for _, level in entries]
     n = len(ctx.levels)
     total = sum(c for _, c in sections)
     ctx.level_select_sections = sections if n > 0 and total == n else ([(None, n)] if n else [])
+    ctx.level_select_hard = hard if n > 0 and len(hard) == n else ([False] * n if n else [])
     if reset_scroll is True:
         ctx.level_select_scroll_y = 0
     elif reset_scroll is False:

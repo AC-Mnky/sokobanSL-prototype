@@ -15,6 +15,17 @@ def normalize_level_key(s: str) -> str:
     return "".join(c for c in s if not c.isspace())
 
 
+def _parse_sequence_level_token(nk: str) -> tuple[str, bool] | None:
+    """Level line after normalize: optional leading '*' = hard; key is rest after stripping '*'."""
+    if not nk or nk.startswith("#"):
+        return None
+    hard = nk.startswith("*")
+    key = nk.lstrip("*")
+    if not key:
+        return None
+    return (key, hard)
+
+
 def read_sequence_stems(sequence_path: Path) -> list[str]:
     if not sequence_path.is_file():
         return []
@@ -23,11 +34,15 @@ def read_sequence_stems(sequence_path: Path) -> list[str]:
     for line in text.splitlines():
         key = normalize_level_key(line)
         if key and not key.startswith("#"):
-            out.append(key)
+            k = key.lstrip("*")
+            if k:
+                out.append(k)
     return out
 
 
-def parse_sequence_sections(sequence_path: Path) -> list[tuple[str | None, list[str]]]:
+def parse_sequence_sections(
+    sequence_path: Path,
+) -> list[tuple[str | None, list[tuple[str, bool]]]]:
     """Parse sequence.md into (chapter_title, level_keys). Chapter lines: after removing all
     whitespace, the line starts with '#'; title is the rest after stripping leading '#' chars.
     If the file has no such line, returns a single section (None, [all keys in file order])."""
@@ -46,11 +61,16 @@ def parse_sequence_sections(sequence_path: Path) -> list[tuple[str | None, list[
     if not normalized_nonempty:
         return []
     if not has_chapter_line:
-        return [(None, normalized_nonempty)]
+        flat: list[tuple[str, bool]] = []
+        for nk in normalized_nonempty:
+            tok = _parse_sequence_level_token(nk)
+            if tok:
+                flat.append(tok)
+        return [(None, flat)]
 
-    sections: list[tuple[str | None, list[str]]] = []
+    sections: list[tuple[str | None, list[tuple[str, bool]]]] = []
     current_title: str | None = None
-    current_keys: list[str] = []
+    current_keys: list[tuple[str, bool]] = []
 
     def flush_section() -> None:
         nonlocal current_title, current_keys
@@ -66,7 +86,9 @@ def parse_sequence_sections(sequence_path: Path) -> list[tuple[str | None, list[
             flush_section()
             current_title = nk.lstrip("#") or None
         else:
-            current_keys.append(nk)
+            tok = _parse_sequence_level_token(nk)
+            if tok:
+                current_keys.append(tok)
     flush_section()
     return sections
 
@@ -85,15 +107,15 @@ def _iter_level_files(levels_dir: Path) -> list[Path]:
 
 
 def load_levels_with_names(path: str | Path) -> list[tuple[str, Level]]:
-    entries, _sections = load_levels_with_names_and_sections(path)
+    entries, _sections, _hard = load_levels_with_names_and_sections(path)
     return entries
 
 
 def load_levels_with_names_and_sections(
     path: str | Path,
-) -> tuple[list[tuple[str, Level]], list[tuple[str | None, int]]]:
-    """Load levels ordered by sequence.md. Returns (entries, ui_sections) where each UI section is
-    (chapter_title_or_None, button_count). Title None means no heading row."""
+) -> tuple[list[tuple[str, Level]], list[tuple[str | None, int]], list[bool]]:
+    """Load levels ordered by sequence.md. Returns (entries, ui_sections, hard_flags).
+    hard_flags[i] is True when sequence.md marked that level with a leading '*' on its line."""
     levels_dir = _level_dir(path)
     by_key: dict[str, tuple[str, Level]] = {}
     for fp in _iter_level_files(levels_dir):
@@ -109,21 +131,24 @@ def load_levels_with_names_and_sections(
     if not parsed:
         default = [by_key[k] for k in sorted(by_key, key=lambda x: x.lower())]
         if not default:
-            return [], []
-        return default, [(None, len(default))]
+            return [], [], []
+        n = len(default)
+        return default, [(None, n)], [False] * n
 
     merged: list[tuple[str, Level]] = []
+    hard_flags: list[bool] = []
     used: set[str] = set()
     ui_sections: list[tuple[str | None, int]] = []
 
     for title, keys in parsed:
         n_here = 0
-        for sk in keys:
+        for sk, hard in keys:
             if sk in used:
                 continue
             pair = by_key.get(sk)
             if pair is not None:
                 merged.append(pair)
+                hard_flags.append(hard)
                 used.add(sk)
                 n_here += 1
         if title is not None:
@@ -135,17 +160,19 @@ def load_levels_with_names_and_sections(
     rest_pairs = [by_key[k] for k in default_keys if k not in used]
     if rest_pairs:
         merged.extend(rest_pairs)
+        hard_flags.extend([False] * len(rest_pairs))
         ui_sections.append(("其他", len(rest_pairs)))
 
     total_ui = sum(c for _, c in ui_sections)
     if total_ui != len(merged):
         ui_sections = [(None, len(merged))]
-    return merged, ui_sections
+        hard_flags = [False] * len(merged)
+    return merged, ui_sections, hard_flags
 
 
 def load_levels_with_names_and_split(path: str | Path) -> tuple[list[tuple[str, Level]], int | None]:
     """Backward-compatible: returns (entries, split_after) when exactly two UI groups: sequenced + 其他."""
-    entries, sections = load_levels_with_names_and_sections(path)
+    entries, sections, _hard = load_levels_with_names_and_sections(path)
     if len(sections) == 2 and sections[1][0] == "其他":
         return entries, sections[0][1]
     if len(sections) == 1:
