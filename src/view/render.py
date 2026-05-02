@@ -133,6 +133,27 @@ def screen_to_world(pos: tuple[int, int], vp: Viewport) -> Coord | None:
     return (int(gx), int(gy))
 
 
+def _world_center_to_screen(wx: float, wy: float, vp: Viewport) -> tuple[int, int]:
+    x = vp.rect.x + vp.offset_x + (wx - vp.min_x + vp.padding) * vp.cell
+    y = vp.rect.y + vp.offset_y + (wy - vp.min_y + vp.padding) * vp.cell
+    return (int(round(x)), int(round(y)))
+
+
+def _draw_solver_link_overlay(
+    surface: pygame.Surface,
+    vp: Viewport,
+    segments: list[tuple[tuple[float, float], tuple[float, float]]],
+) -> None:
+    overlay = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
+    rgba = (100, 200, 230, 150)
+    stroke = max(1, min(4, vp.cell // 14))
+    for p0f, p1f in segments:
+        p0 = _world_center_to_screen(p0f[0], p0f[1], vp)
+        p1 = _world_center_to_screen(p1f[0], p1f[1], vp)
+        pygame.draw.line(overlay, rgba, p0, p1, stroke)
+    surface.blit(overlay, (0, 0))
+
+
 def _draw_world(surface: pygame.Surface, state: State, vp: Viewport) -> None:
     pygame.draw.rect(surface, GRID, vp.rect, 1)
     for coord, mono in state.items():
@@ -665,6 +686,8 @@ def render_frame(surface: pygame.Surface, ctx: AppCtx, font: pygame.font.Font) -
     _draw_overlay(surface, ctx, vp, font)
     # 5) preview is above targets and blocks interaction below.
     _draw_preview_over_map(surface, ctx.preview_stack, vp)
+    if ctx.solver_link_segments:
+        _draw_solver_link_overlay(surface, vp, ctx.solver_link_segments)
     if ctx.editor_mode:
         _draw_editor_panel(surface, ctx, font, right_panel)
         _draw_drag_preview(surface, ctx)
@@ -680,14 +703,18 @@ def render_frame(surface: pygame.Surface, ctx: AppCtx, font: pygame.font.Font) -
 
     lines = [
         (
-            "Esc/Q:back WASD:move(hold) R:reset Z:undo(hold) H:solver L:editor Ctrl+S(save) [/]:rejS/L(editor)",
+            "Esc/Q:back WASD:move(hold) J:solver-links R:reset Z:undo(hold) H:solver L:editor Ctrl+S(save) [/]:rej(editor)",
             TXT,
         ),
         (
             f"solver={ctx.solver_session.status} steps={ctx.solver_session.steps} searched={ctx.solver_session.searched_state_count} time={ctx.solver_session.elapsed_seconds:.3f}s",
             solver_color,
         ),
-        (f"editor={'on' if ctx.editor_mode else 'off'} preview_depth={len(ctx.preview_stack)} history={len(ctx.history_stack)}", TXT),
+        (
+            f"editor={'on' if ctx.editor_mode else 'off'} solverLinkJ={'on' if ctx.solver_path_preview_enabled else 'off'} "
+            f"preview_depth={len(ctx.preview_stack)} history={len(ctx.history_stack)}",
+            TXT,
+        ),
     ]
     y = 10
     for text, color in lines:

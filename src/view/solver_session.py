@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from src.goals import is_goal
 from src.solver_bfs import solve
+from src.solver_link_overlay import build_solver_link_segments
 from src.state_utils import clone_state
 from src.view.types import AppCtx
 
@@ -10,11 +11,13 @@ def stop_solver(ctx: AppCtx) -> None:
     ctx.solver_session.status = "idle"
     ctx.solver_session.generator = None
     ctx.solver_session.elapsed_seconds = 0.0
+    ctx.solver_link_segments = None
 
 
 def start_or_restart_solver(ctx: AppCtx) -> None:
     if ctx.runtime_state is None or ctx.static_state is None:
         return
+    stop_solver(ctx)
     ctx.solver_session.generator = solve(
         clone_state(ctx.runtime_state) or {},
         ctx.static_state,
@@ -36,6 +39,7 @@ def advance_solver_once(ctx: AppCtx) -> None:
     except StopIteration:
         ctx.solver_session.status = "idle"
         ctx.solver_session.generator = None
+        ctx.solver_link_segments = None
         return
     ctx.solver_session.steps = steps
     ctx.solver_session.solution = solution
@@ -45,3 +49,11 @@ def advance_solver_once(ctx: AppCtx) -> None:
         normalized = "no_solution" if status == "no solution" else status
         ctx.solver_session.status = normalized
         ctx.solver_session.generator = None
+        if normalized == "solved" and ctx.solver_path_preview_enabled and ctx.runtime_state is not None and ctx.static_state is not None:
+            ctx.solver_link_segments = build_solver_link_segments(
+                clone_state(ctx.runtime_state) or {},
+                ctx.static_state,
+                tuple(solution),
+            )
+        else:
+            ctx.solver_link_segments = None

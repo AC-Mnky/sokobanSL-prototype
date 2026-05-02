@@ -114,3 +114,6 @@ class AppCtx:
     move_next_repeat_at: int | None = None
     # cached per frame
     last_level_button_rects: list[pygame.Rect] = field(default_factory=list)
+    # J：最短解「连接」预览（分层图 md≤1 边）；关解题器或清题时清空
+    solver_path_preview_enabled: bool = False
+    solver_link_segments: list[tuple[tuple[float, float], tuple[float, float]]] | None = None

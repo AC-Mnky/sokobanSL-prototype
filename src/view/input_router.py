@@ -908,6 +908,11 @@ def handle_event(ctx: AppCtx, event: pygame.event.Event, surface: pygame.Surface
             ctx.editor_mode = not ctx.editor_mode
             _cancel_middle_selection(ctx)
             return False
+        if event.key == pygame.K_j:
+            ctx.solver_path_preview_enabled = not ctx.solver_path_preview_enabled
+            if not ctx.solver_path_preview_enabled:
+                ctx.solver_link_segments = None
+            return False
         if event.key == pygame.K_s and (event.mod & pygame.KMOD_CTRL):
             if ctx.editor_mode:
                 _save_current_level(ctx)

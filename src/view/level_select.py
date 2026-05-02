@@ -126,6 +126,7 @@ def try_enter_level_by_click(ctx: AppCtx, pos: tuple[int, int], surface: pygame.
             ctx.editor_mode = False
             ctx.level_cleared = is_goal(ctx.runtime_state, ctx.static_state)
             ctx.solver_session = type(ctx.solver_session)()
+            ctx.solver_link_segments = None
             ctx.mode = "playing"
             return True
     return False
