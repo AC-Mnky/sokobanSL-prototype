@@ -11,6 +11,8 @@ from src.view.types import AppCtx, EditorPaletteItem, PreviewLayer
 
 BG = (16, 18, 22)
 BG_CLEARED = (22, 24, 30)
+BG_CLEARED_BRIGHT = (100, 100, 100)
+CLEARED_AUTO_ADVANCE_MS = 2000
 GRID = (40, 44, 52)
 TXT = (220, 220, 220)
 LEVEL_HARD_TXT = (255, 110, 110)
@@ -64,6 +66,11 @@ def _scale_color(rgb: tuple[int, int, int], factor: float) -> tuple[int, int, in
         max(0, min(255, int(rgb[1] * factor))),
         max(0, min(255, int(rgb[2] * factor))),
     )
+
+
+def _lerp_rgb(a: tuple[int, int, int], b: tuple[int, int, int], t: float) -> tuple[int, int, int]:
+    t = max(0.0, min(1.0, t))
+    return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3))
 
 
 def _draw_hollow_eyes(surface: pygame.Surface, rect: pygame.Rect) -> None:
@@ -641,7 +648,16 @@ def _draw_middle_selection(surface: pygame.Surface, ctx: AppCtx, vp: Viewport) -
 
 
 def render_frame(surface: pygame.Surface, ctx: AppCtx, font: pygame.font.Font) -> None:
-    surface.fill(BG_CLEARED if (ctx.mode == "playing" and ctx.level_cleared) else BG)
+    if ctx.mode == "playing" and ctx.level_cleared:
+        if not ctx.editor_mode and ctx.cleared_auto_advance_start_ms is not None:
+            elapsed = pygame.time.get_ticks() - ctx.cleared_auto_advance_start_ms
+            t = elapsed / CLEARED_AUTO_ADVANCE_MS
+            bg = _lerp_rgb(BG_CLEARED, BG_CLEARED_BRIGHT, t)
+        else:
+            bg = BG_CLEARED
+    else:
+        bg = BG
+    surface.fill(bg)
     if ctx.mode == "select_level":
         rects, chapter_titles, _bottom = compute_level_select_layout(
             len(ctx.levels),
@@ -703,7 +719,7 @@ def render_frame(surface: pygame.Surface, ctx: AppCtx, font: pygame.font.Font) -
 
     lines = [
         (
-            "Esc/Q:back WASD:move(hold) J:solver-links R:reset Z:undo(hold) H:solver L:editor Ctrl+S(save) [/]:rej(editor)",
+            "Esc/Q:back WASD:move(hold to repeat) J:solver-links R:reset Z:undo(hold to repeat) H:solver L:editor Ctrl+S(save) [/]:rej(editor)",
             TXT,
         ),
         (

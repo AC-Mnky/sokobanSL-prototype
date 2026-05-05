@@ -17,12 +17,14 @@ from src.state_utils import (
 from src.types import Action, ButtonData, Level, MonoData, StaticState, TargetData
 from src.view.level_select import (
     apply_level_select_wheel,
+    enter_level_at_index,
     export_builtin_and_refresh,
+    next_level_in_select_order,
     refresh_levels,
     try_enter_level_by_click,
 )
 from src.view.preview import clear_preview, pop_preview, push_preview_if_data, resolve_visible_mono
-from src.view.render import EDITOR_RIGHT_PANEL, build_viewport, screen_to_world, world_to_screen
+from src.view.render import CLEARED_AUTO_ADVANCE_MS, EDITOR_RIGHT_PANEL, build_viewport, screen_to_world, world_to_screen
 from src.view.solver_session import start_or_restart_solver, stop_solver
 from src.view.types import AppCtx, DragPayload, DragSession
 
@@ -323,6 +325,24 @@ def tick_undo_z_repeat(ctx: AppCtx) -> bool:
     return moved
 
 
+def tick_cleared_auto_advance(ctx: AppCtx) -> None:
+    if ctx.mode != "playing" or ctx.editor_mode or not ctx.level_cleared:
+        ctx.cleared_auto_advance_start_ms = None
+        return
+    now = pygame.time.get_ticks()
+    if ctx.cleared_auto_advance_start_ms is None:
+        ctx.cleared_auto_advance_start_ms = now
+        return
+    if now - ctx.cleared_auto_advance_start_ms < CLEARED_AUTO_ADVANCE_MS:
+        return
+    ctx.cleared_auto_advance_start_ms = None
+    nxt = next_level_in_select_order(ctx)
+    if nxt is None:
+        _return_to_select_level(ctx)
+    else:
+        enter_level_at_index(ctx, nxt)
+
+
 def tick_move_repeat(ctx: AppCtx) -> bool:
     """After move key held for MOVE_REPEAT_DELAY_MS, apply movement every MOVE_REPEAT_INTERVAL_MS until release."""
     if ctx.mode != "playing" or ctx.level_cleared:
@@ -355,6 +375,7 @@ def _return_to_select_level(ctx: AppCtx) -> None:
     ctx.mode = "select_level"
     ctx.preview_stack.clear()
     ctx.level_cleared = False
+    ctx.cleared_auto_advance_start_ms = None
     ctx.editor_mode = False
     ctx.undo_z_next_repeat_at = None
     ctx.move_hold_key = None

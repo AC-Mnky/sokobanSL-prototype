@@ -86,6 +86,8 @@ class AppCtx:
     history_stack: list[tuple[State, StaticState]] = field(default_factory=list)
     preview_stack: list[PreviewLayer] = field(default_factory=list)
     level_cleared: bool = False
+    # pygame.time.get_ticks() when auto-next / brighten started (playing, cleared, editor off)
+    cleared_auto_advance_start_ms: int | None = None
     level_saved: bool = False
     solver_session: SolverSession = field(default_factory=SolverSession)
     editor_mode: bool = False

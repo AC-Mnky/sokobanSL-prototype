@@ -105,6 +105,40 @@ def apply_level_select_wheel(ctx: AppCtx, surface: pygame.Surface, wheel_y: int)
     )
 
 
+def enter_level_at_index(ctx: AppCtx, index: int) -> None:
+    lvl = ctx.levels[index]
+    ctx.current_level_idx = index
+    ctx.level_saved = False
+    ctx.static_state = clone_static_state(lvl.static_state)
+    ctx.initial_state = clone_state(lvl.initial_state) or {}
+    ctx.runtime_state = clone_state(lvl.initial_state) or {}
+    ctx.history_stack.clear()
+    ctx.preview_stack.clear()
+    ctx.editor_mode = False
+    ctx.level_cleared = is_goal(ctx.runtime_state, ctx.static_state)
+    ctx.cleared_auto_advance_start_ms = None
+    ctx.solver_session = type(ctx.solver_session)()
+    ctx.solver_link_segments = None
+    ctx.undo_z_next_repeat_at = None
+    ctx.move_hold_key = None
+    ctx.move_next_repeat_at = None
+
+
+def next_level_in_select_order(ctx: AppCtx) -> int | None:
+    """Next index in the same order as the level-select list (load_levels_with_names_and_sections).
+
+    None → no following entry; caller returns to level select.
+    """
+    if ctx.current_level_idx is None:
+        return None
+    i = ctx.current_level_idx
+    n = len(ctx.levels)
+    if i < 0 or i >= n:
+        return None
+    j = i + 1
+    return j if j < n else None
+
+
 def try_enter_level_by_click(ctx: AppCtx, pos: tuple[int, int], surface: pygame.Surface) -> bool:
     rects, _titles, _bottom = compute_level_select_layout(
         len(ctx.levels),
@@ -115,18 +149,7 @@ def try_enter_level_by_click(ctx: AppCtx, pos: tuple[int, int], surface: pygame.
     ctx.last_level_button_rects = [r.move(0, -sy) for r in rects]
     for i, rect in enumerate(rects):
         if ctx.last_level_button_rects[i].collidepoint(pos):
-            lvl = ctx.levels[i]
-            ctx.current_level_idx = i
-            ctx.level_saved = False
-            ctx.static_state = clone_static_state(lvl.static_state)
-            ctx.initial_state = clone_state(lvl.initial_state) or {}
-            ctx.runtime_state = clone_state(lvl.initial_state) or {}
-            ctx.history_stack.clear()
-            ctx.preview_stack.clear()
-            ctx.editor_mode = False
-            ctx.level_cleared = is_goal(ctx.runtime_state, ctx.static_state)
-            ctx.solver_session = type(ctx.solver_session)()
-            ctx.solver_link_segments = None
+            enter_level_at_index(ctx, i)
             ctx.mode = "playing"
             return True
     return False
