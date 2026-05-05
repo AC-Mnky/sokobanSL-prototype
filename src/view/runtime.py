@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import sys
 import pygame
 
 from src.view.input_router import handle_event, tick_cleared_auto_advance, tick_move_repeat, tick_undo_z_repeat
@@ -21,10 +23,34 @@ def _build_ui_font() -> pygame.font.Font:
     return pygame.font.Font(None, FONT_SIZE)
 
 
+def _windows_detach_ime_from_window() -> None:
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        info = pygame.display.get_wm_info()
+        hwnd = info.get("window")
+        if not hwnd:
+            return
+        imm32 = ctypes.WinDLL("imm32", use_last_error=True)
+        ImmAssociateContext = imm32.ImmAssociateContext
+        ImmAssociateContext.argtypes = [wintypes.HWND, wintypes.HANDLE]
+        ImmAssociateContext.restype = wintypes.HANDLE
+        ImmAssociateContext(hwnd, None)
+    except Exception:
+        pass
+
+
 def run_app(ctx: AppCtx) -> None:
+    # Reduces IME capturing keys before SDL inits (pygame-ce / SDL2).
+    os.environ.setdefault("SDL_IME_INTERNAL_EDITING", "0")
     pygame.init()
     pygame.font.init()
     surface = pygame.display.set_mode((1280, 720))
+    pygame.key.stop_text_input()
+    _windows_detach_ime_from_window()
     pygame.display.set_caption("NOSL Sokoban")
     clock = pygame.time.Clock()
     font = _build_ui_font()
