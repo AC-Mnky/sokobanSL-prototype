@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.types import ButtonData, Level, MonoData, StaticState, TargetData
+from src.types import LEVEL_FORMAT_VERSION, ButtonData, Level, MonoData, StaticState, TargetData
 
 
 def _air() -> MonoData:
@@ -24,21 +24,22 @@ def make_basic_levels() -> list[Level]:
 
     static_state = StaticState(
         targets={(1, 0): TargetData(required_is_controllable=True, required_color=1)},
-        buttons={(0, 1): [ButtonData(button_type="s", color=1), ButtonData(button_type="l", color=1)]},
     )
+    btn_sl = [ButtonData(button_type="s", color=1), ButtonData(button_type="l", color=1)]
     initial_state = {
         (0, 0): _player(1),
         (2, 0): _wall(),
         (1, 1): _disk(1, {(-1, -1): None, (0, -1): None}),
+        (0, 1): MonoData(is_empty=True, buttons=btn_sl),
     }
-    levels.append(Level(static_state=static_state, initial_state=initial_state))
+    levels.append(
+        Level(static_state=static_state, initial_state=initial_state, format_version=LEVEL_FORMAT_VERSION)
+    )
 
     static_state = StaticState(
         targets={(5, 2): TargetData(required_is_controllable=True, required_color=0),
                  (5, 3): TargetData(required_is_controllable=False, required_color=0),
                  (5, 4): TargetData(required_is_controllable=False, required_color=0),},
-        buttons={(2, 1): [ButtonData(button_type="s", color=1)],
-                 (3, 1): [ButtonData(button_type="l", color=1)]},
     )
     initial_state = {}
     for i in range(-1, 7):
@@ -51,6 +52,10 @@ def make_basic_levels() -> list[Level]:
     initial_state[(0, 3)] = _player(0)
     initial_state[(1, 2)] = _box()
     initial_state[(0, 0)] = _disk(1, {(2, 3): None, (2, 4): None, (3, 3): None, (3, 4): None})
-    levels.append(Level(static_state=static_state, initial_state=initial_state))
+    initial_state[(2, 1)] = MonoData(is_empty=True, buttons=[ButtonData(button_type="s", color=1)])
+    initial_state[(3, 1)] = MonoData(is_empty=True, buttons=[ButtonData(button_type="l", color=1)])
+    levels.append(
+        Level(static_state=static_state, initial_state=initial_state, format_version=LEVEL_FORMAT_VERSION)
+    )
 
     return levels

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import pygame
 
-from src.state_utils import add_coord
+from src.state_utils import add_coord, get_buttons
 from src.types import Coord, MonoData, State
 from src.view.level_select import compute_level_select_layout, level_select_scroll_max_y
 from src.view.types import AppCtx, EditorPaletteItem, PreviewLayer
@@ -174,35 +174,41 @@ def _draw_world(surface: pygame.Surface, state: State, vp: Viewport) -> None:
         base = _base_color_by_index(mono.color)
         if mono.is_wall:
             _draw_editor_icon(surface, rect, "wall", mono.color)
-            _draw_reject_save_load_overlay(surface, rect, mono)
             continue
         if mono.is_controllable:
             _draw_editor_icon(surface, rect, "player", mono.color)
-            _draw_reject_save_load_overlay(surface, rect, mono)
             continue
         if mono.data is not None:
             _draw_editor_icon(surface, rect, "disk", mono.color)
-            _draw_reject_save_load_overlay(surface, rect, mono)
             continue
         _draw_editor_icon(surface, rect, "box", mono.color)
-        _draw_reject_save_load_overlay(surface, rect, mono)
+
+
+def _draw_buttons_on_rect(
+    surface: pygame.Surface,
+    rect: pygame.Rect,
+    buttons: list,
+) -> None:
+    if not buttons:
+        return
+    n = len(buttons)
+    slot_w = max(1, rect.width // n)
+    total_w = slot_w * n
+    start_x = rect.x + (rect.width - total_w) // 2
+    for i, b in enumerate(buttons):
+        slot = pygame.Rect(start_x + i * slot_w, rect.y, slot_w, rect.height)
+        color = _scale_color(_base_color_by_index(b.color), 1.05)
+        _draw_button_glyph(surface, slot, b.button_type.upper(), color)
 
 
 def _draw_buttons_under_objects(surface: pygame.Surface, ctx: AppCtx, vp: Viewport) -> None:
-    if ctx.static_state is None:
+    if ctx.runtime_state is None:
         return
-    for coord, buttons in ctx.static_state.buttons.items():
-        rect = world_to_screen(coord, vp)
+    for coord, mono in ctx.runtime_state.items():
+        buttons = get_buttons(mono)
         if not buttons:
             continue
-        n = len(buttons)
-        slot_w = max(1, rect.width // n)
-        total_w = slot_w * n
-        start_x = rect.x + (rect.width - total_w) // 2
-        for i, b in enumerate(buttons):
-            slot = pygame.Rect(start_x + i * slot_w, rect.y, slot_w, rect.height)
-            color = _scale_color(_base_color_by_index(b.color), 1.05)
-            _draw_button_glyph(surface, slot, b.button_type.upper(), color)
+        _draw_buttons_on_rect(surface, world_to_screen(coord, vp), buttons)
 
 
 def _draw_disk_region_overlay(surface: pygame.Surface, state: State, vp: Viewport) -> None:
@@ -263,37 +269,6 @@ def _draw_button_glyph(
     pygame.draw.line(surface, color, (x0, ym), (x1, ym), stroke)
     pygame.draw.line(surface, color, (x1, ym), (x1, y1), stroke)
     pygame.draw.line(surface, color, (x1, y1), (x0, y1), stroke)
-
-
-def _draw_reject_save_load_overlay(surface: pygame.Surface, rect: pygame.Rect, mono: MonoData) -> None:
-    if mono.is_empty or (not mono.reject_save and not mono.reject_load):
-        return
-    pad = max(2, min(rect.w, rect.h) // 10)
-    side = max(6, min(rect.w, rect.h) - 2 * pad)
-    sq = pygame.Rect(0, 0, side, side)
-    sq.centerx = rect.centerx
-    sq.centery = rect.centery
-    color = (248, 252, 255)
-    stroke = max(1, min(sq.w, sq.h) // 8)
-    if mono.reject_save and mono.reject_load:
-        mid_x = sq.x + sq.w // 2
-        left = pygame.Rect(sq.x, sq.y, mid_x - sq.x, sq.h)
-        right = pygame.Rect(mid_x, sq.y, sq.right - mid_x, sq.h)
-        _draw_button_glyph(surface, left, "S", color)
-        _draw_button_glyph(surface, right, "L", color)
-    elif mono.reject_save:
-        _draw_button_glyph(surface, sq, "S", color)
-    else:
-        _draw_button_glyph(surface, sq, "L", color)
-    # Slash: top-right to bottom-left (\)
-    inset = max(1, stroke // 2)
-    pygame.draw.line(
-        surface,
-        color,
-        (sq.right - inset, sq.top + inset),
-        (sq.left + inset, sq.bottom - inset),
-        stroke,
-    )
 
 
 def _draw_preview_over_map(surface: pygame.Surface, preview_stack: list[PreviewLayer], vp: Viewport) -> None:
@@ -367,15 +342,15 @@ def _collect_editor_colors(ctx: AppCtx) -> list[int]:
     colors: set[int] = set()
     if ctx.runtime_state is not None:
         for mono in ctx.runtime_state.values():
-            if mono is None or mono.is_empty:
+            if mono is None:
                 continue
-            colors.add(max(1, mono.color))
+            if not mono.is_empty:
+                colors.add(max(1, mono.color))
+            for b in get_buttons(mono):
+                colors.add(max(1, b.color))
     if ctx.static_state is not None:
         for target in ctx.static_state.targets.values():
             colors.add(max(1, target.required_color))
-        for buttons in ctx.static_state.buttons.values():
-            for b in buttons:
-                colors.add(max(1, b.color))
     ordered = sorted(c for c in colors if c > 0)
     nxt = 1
     while nxt in colors:
@@ -508,25 +483,17 @@ def _draw_drag_preview(surface: pygame.Surface, ctx: AppCtx) -> None:
         preview = pygame.Surface((sel_w, sel_h), pygame.SRCALPHA)
 
         # 1) buttons under objects
-        for rel, buttons in payload.selection_static.buttons.items():
-            rx, ry = rel
-            cell_rect = pygame.Rect(rx * cell_px, ry * cell_px, cell_px, cell_px)
-            if not buttons:
-                continue
-            n = len(buttons)
-            slot_w = max(1, cell_rect.width // n)
-            total_w = slot_w * n
-            start_x = cell_rect.x + (cell_rect.width - total_w) // 2
-            for i, b in enumerate(buttons):
-                slot = pygame.Rect(start_x + i * slot_w, cell_rect.y, slot_w, cell_rect.height)
-                color = _scale_color(_base_color_by_index(b.color), 1.05)
-                _draw_button_glyph(preview, slot, b.button_type.upper(), color)
+        for rx in range(x_len):
+            for ry in range(y_len):
+                local_rect = pygame.Rect(rx * cell_px, ry * cell_px, cell_px, cell_px)
+                mono = payload.selection_state.get((rx, ry)) if payload.selection_state else None
+                _draw_buttons_on_rect(preview, local_rect, get_buttons(mono))
 
         # 2) runtime icons
         for rx in range(x_len):
             for ry in range(y_len):
                 local_rect = pygame.Rect(rx * cell_px, ry * cell_px, cell_px, cell_px)
-                mono = payload.selection_state.get((rx, ry))
+                mono = payload.selection_state.get((rx, ry)) if payload.selection_state else None
                 if mono is None or mono.is_empty:
                     _draw_editor_icon(preview, local_rect, "air", 0)
                 elif mono.is_wall:
@@ -537,8 +504,6 @@ def _draw_drag_preview(surface: pygame.Surface, ctx: AppCtx) -> None:
                     _draw_editor_icon(preview, local_rect, "disk", mono.color)
                 else:
                     _draw_editor_icon(preview, local_rect, "box", mono.color)
-                if mono is not None and not mono.is_empty:
-                    _draw_reject_save_load_overlay(preview, local_rect, mono)
 
         # 3) target overlays
         for rel, target in payload.selection_static.targets.items():
@@ -569,8 +534,6 @@ def _draw_drag_preview(surface: pygame.Surface, ctx: AppCtx) -> None:
             _draw_editor_icon(preview, local_rect, "disk", mono.color)
         else:
             _draw_editor_icon(preview, local_rect, "box", mono.color)
-        if not mono.is_empty:
-            _draw_reject_save_load_overlay(preview, local_rect, mono)
     elif payload.kind == "buttons" and payload.buttons:
         first = payload.buttons[0]
         _draw_editor_icon(preview, local_rect, "s_button" if first.button_type == "s" else "l_button", first.color)
@@ -719,7 +682,7 @@ def render_frame(surface: pygame.Surface, ctx: AppCtx, font: pygame.font.Font) -
 
     lines = [
         (
-            "Esc/Q:back WASD:move(hold to repeat) J:solver-links R:reset Z:undo(hold to repeat) H:solver L:editor Ctrl+S(save) [/]:rej(editor)",
+            "Esc/Q:back WASD:move(hold to repeat) J:solver-links R:reset Z:undo(hold to repeat) H:solver L:editor Ctrl+S(save)",
             TXT,
         ),
         (

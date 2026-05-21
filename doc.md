@@ -59,13 +59,15 @@ python -m pytest -q
 ### 数据模型
 - `State = dict[Coord, MonoData | None]`
   - `value is None` 表示该坐标“无数据”。
+- `Level`
+  - `format_version`：关卡 pickle 格式。`1` = 旧版（`StaticState.buttons`）；`2` = 新版（按钮在 `MonoData.buttons`）。加载 v1 时仅在内存迁移，**不**改写磁盘上的旧文件；编辑器 `Ctrl+S` 保存为 v2。
 - `StaticState`
-  - `targets`：目标条件映射。
-  - `buttons`：按钮映射（同坐标支持多个按钮）。
+  - `targets`：目标条件映射（静态，不参与 SL）。
+  - `buttons`：v1 pickle 遗留字段；v2 恒为空。
 - `MonoData`
-  - `is_empty / is_wall / is_controllable / color / reject_save / reject_load / data`。
-  - `reject_save`：实体为真时，S 快照读阶段不读取该世界格，保留磁盘该相对键的旧记录（与「世界格为 None」时行为一致）。
-  - `reject_load`：实体为真时，L 写阶段不向该世界格写入（该格保持当前状态）。
+  - `is_empty / is_wall / is_controllable / color / buttons / reject_save / reject_load / data`。
+  - `buttons`：同格 S/L 按钮列表，与实体/空气共存，参与 SL 快照。
+  - `reject_save` / `reject_load`：仅旧 pickle 兼容，不再影响规则。
   - `data` 用于磁盘记录态：键为**相对磁盘所在格的偏移**，世界格 = 磁盘位置 + 偏移；主关卡 `State` 的键仍为世界坐标。
 
 ### 单步状态更新
@@ -75,10 +77,10 @@ python -m pytest -q
   2. `run_event_cycle()`：处理下降沿触发的 S/L 事件，直到稳定。
 
 ### 事件与写提交
-- 事件触发：`collect_edge_events()`，仅依赖 `is_empty` 的下降沿。
+- 事件触发：`collect_edge_events()` 扫描 state 中带 `buttons` 的坐标；下降沿仍仅依赖 `is_empty`（压下后从该格 `MonoData.buttons` 取事件）。
 - 读写轮次：`build_event_writes()` 生成 `writes: list[State]`。
-  - `S` 读取快照时，对每个相对键 `rel` 看世界格 `disk_pos+rel`；若该格当前为 `None`（无格/空），保留磁盘该 `rel` 的旧记录，不用 `None`/空气覆盖；若该格为实体且 `reject_save`，同样保留旧记录。
-  - `L` 把磁盘 `data` 中每个非 `None` 值写回世界格 `disk_pos+rel`；若目标世界格为实体且 `reject_load`，跳过该坐标。
+  - `S` 读取快照时，对每个相对键 `rel` 看世界格 `disk_pos+rel` 的整格 `MonoData`（含 `buttons`）；若该格为 `None`（无格），保留磁盘该 `rel` 的旧记录。
+  - `L` 把磁盘 `data` 中每个非 `None` 值写回世界格 `disk_pos+rel`（含按钮列表）。
 - 提交：`commit_writes()`
   - `None` 候选会被过滤。
   - 相同坐标按深比较分组计数，多数决生效。
@@ -123,7 +125,6 @@ python -m pytest -q
   - `H`：启动/重建求解器会话。
   - `L`：切换关卡编辑器模式（on/off）。
   - `Ctrl+S`：仅在编辑器模式开启时生效，覆盖保存当前关卡（保存当前 `state + static_state` 到当前关卡索引），并在界面下方显示一行 `Level Saved`，直到玩家下一次实质性操作。
-  - `[` / `]`：仅在编辑器模式开启时生效，切换鼠标所指格（或已提交的中键框选矩形内所有实体）的 `reject_save` / `reject_load`。
   - 鼠标左键：按下-松开触发；若按下后横向或纵向移动超过半格，预览点击不会触发。
 
 ### 预览规则
@@ -133,7 +134,7 @@ python -m pytest -q
 
 ### 关卡编辑器模式
 - 保留游玩态全部操作（移动、重置、撤回、求解器等）。
-- 实体可带 `reject_save` / `reject_load`：画面上在该格内居中正方形区域用几何笔画显示被斜线（右上到左下）划掉的 `S`、`L` 或 `SL`（同一根斜线）。
+- S/L 按钮写在 `state` 对应格的 `MonoData.buttons` 上（可与实体同格）；调色板放置会追加到该列表。
 - 左键拖拽支持自动吸附到网格：
   - 若起点有状态物体（包括空气格），拖到终点会与终点状态物体交换；拖到右侧物品栏区域可删除该状态物体。
   - 空气格的细则：拖到 `value is None` 的格子后，起点会变为 `None`；拖到 `key not in state` 的格子或拖到右侧面板删除时，起点会直接从 `state` 字典移除。

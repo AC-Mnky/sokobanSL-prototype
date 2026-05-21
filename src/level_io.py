@@ -4,8 +4,8 @@ import pickle
 from pathlib import Path
 
 from src.sample_levels import make_basic_levels
-from src.state_utils import normalize_level_monos
-from src.types import Level
+from src.state_utils import prepare_level_after_load, prepare_level_for_save
+from src.types import LEVEL_FORMAT_VERSION, Level
 
 SEQUENCE_FILENAME = "sequence.md"
 
@@ -100,6 +100,25 @@ def _level_dir(path: str | Path) -> Path:
     return p
 
 
+def load_level_from_pickle(raw: object) -> Level:
+    if isinstance(raw, dict) and "level" in raw:
+        level = raw["level"]
+    else:
+        level = raw
+    if not isinstance(level, Level):
+        raise TypeError(f"expected Level, got {type(level)!r}")
+    if not hasattr(level, "format_version"):
+        level.format_version = 1
+    prepare_level_after_load(level)
+    return level
+
+
+def dump_level_to_pickle(level: Level) -> Level:
+    saved = prepare_level_for_save(level)
+    saved.format_version = LEVEL_FORMAT_VERSION
+    return saved
+
+
 def _iter_level_files(levels_dir: Path) -> list[Path]:
     if not levels_dir.exists():
         return []
@@ -120,8 +139,7 @@ def load_levels_with_names_and_sections(
     by_key: dict[str, tuple[str, Level]] = {}
     for fp in _iter_level_files(levels_dir):
         with fp.open("rb") as f:
-            level = pickle.load(f)
-        normalize_level_monos(level)
+            level = load_level_from_pickle(pickle.load(f))
         key = normalize_level_key(fp.stem)
         if key not in by_key:
             by_key[key] = (fp.stem, level)
@@ -192,7 +210,7 @@ def save_levels(path: str | Path, levels: list[Level]) -> None:
     for i, level in enumerate(levels, start=1):
         out = levels_dir / f"level_{i:03d}.pkl"
         with out.open("wb") as f:
-            pickle.dump(level, f)
+            pickle.dump(dump_level_to_pickle(level), f)
 
 
 def export_builtin_levels(path: str | Path) -> list[Level]:
@@ -209,7 +227,7 @@ def save_level_by_index(path: str | Path, index: int, level: Level) -> bool:
     if index >= len(files):
         return False
     with files[index].open("wb") as f:
-        pickle.dump(level, f)
+        pickle.dump(dump_level_to_pickle(level), f)
     return True
 
 
@@ -219,5 +237,5 @@ def save_level_by_stem(path: str | Path, stem: str, level: Level) -> bool:
     if not fp.is_file():
         return False
     with fp.open("wb") as f:
-        pickle.dump(level, f)
+        pickle.dump(dump_level_to_pickle(level), f)
     return True

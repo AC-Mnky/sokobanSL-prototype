@@ -50,13 +50,14 @@ def test_drag_buttons_delete_only_buttons():
     ensure_pygame()
     ctx = make_ctx()
     ctx.editor_mode = True
-    ctx.static_state.buttons[(0, 0)] = [ButtonData(button_type="s", color=1)]
+    ctx.runtime_state[(0, 0)] = MonoData(is_empty=True, buttons=[ButtonData(button_type="s", color=1)])
     ctx.static_state.targets[(0, 0)] = TargetData(required_is_controllable=False, required_color=0)
     ctx.drag_session.active = True
     ctx.drag_session.payload = DragPayload(kind="buttons", source_coord=(0, 0), buttons=[ButtonData(button_type="s", color=1)])
     changed = _apply_editor_drop(ctx, (639, 10), pygame.Surface((640, 480)))
     assert changed
-    assert (0, 0) not in ctx.static_state.buttons
+    mono = ctx.runtime_state.get((0, 0))
+    assert mono is None or not mono.buttons
     assert (0, 0) in ctx.static_state.targets
 
 
@@ -64,8 +65,7 @@ def test_pick_priority_buttons_before_target():
     ensure_pygame()
     ctx = make_ctx()
     ctx.editor_mode = True
-    ctx.runtime_state[(0, 0)] = None
-    ctx.static_state.buttons[(0, 0)] = [ButtonData(button_type="l", color=2)]
+    ctx.runtime_state[(0, 0)] = MonoData(is_empty=True, buttons=[ButtonData(button_type="l", color=2)])
     ctx.static_state.targets[(0, 0)] = TargetData(required_is_controllable=True, required_color=0)
     surface = pygame.Surface((640, 480))
     vp = build_viewport(surface, ctx.runtime_state, right_panel=280)
@@ -78,7 +78,7 @@ def test_pick_priority_buttons_before_target():
 def test_collect_editor_colors_adds_new_color():
     ctx = make_ctx()
     ctx.runtime_state[(2, 0)] = box(2)
-    ctx.static_state.buttons[(3, 0)] = [ButtonData(button_type="s", color=3)]
+    ctx.runtime_state[(3, 0)] = MonoData(is_empty=True, buttons=[ButtonData(button_type="s", color=3)])
     colors = _collect_editor_colors(ctx)
     assert 2 in colors and 3 in colors
     assert 1 in colors or 4 in colors
@@ -102,8 +102,7 @@ def test_air_priority_is_lower_than_buttons_and_target():
     ensure_pygame()
     ctx = make_ctx()
     ctx.editor_mode = True
-    ctx.runtime_state[(0, 0)] = MonoData(is_empty=True, is_wall=False, is_controllable=False, color=0, data=None)
-    ctx.static_state.buttons[(0, 0)] = [ButtonData(button_type="s", color=1)]
+    ctx.runtime_state[(0, 0)] = MonoData(is_empty=True, buttons=[ButtonData(button_type="s", color=1)])
     ctx.static_state.targets[(0, 0)] = TargetData(required_is_controllable=False, required_color=0)
     surface = pygame.Surface((640, 480))
     vp = build_viewport(surface, ctx.runtime_state, right_panel=280)

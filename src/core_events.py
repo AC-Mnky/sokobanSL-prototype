@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from src.core_write_commit import commit_writes
-from src.state_utils import add_coord, clone_mono, is_empty_value, is_solid_value
+from src.state_utils import add_coord, clone_mono, get_buttons, is_empty_value
 from src.types import ButtonData, Event, MonoData, State, StaticState
 
 
@@ -9,11 +9,21 @@ def _is_pressed(state: State, coord: tuple[int, int]) -> bool:
     return not is_empty_value(state.get(coord))
 
 
+def _button_coords(state: State) -> set[tuple[int, int]]:
+    coords: set[tuple[int, int]] = set()
+    for coord, mono in state.items():
+        if get_buttons(mono):
+            coords.add(coord)
+    return coords
+
+
 def collect_edge_events(prev_state: State, next_state: State, static_state: StaticState) -> list[Event]:
+    del static_state
     events: list[Event] = []
-    for coord, buttons in static_state.buttons.items():
+    for coord in _button_coords(prev_state) | _button_coords(next_state):
         if (not _is_pressed(prev_state, coord)) and _is_pressed(next_state, coord):
-            events.extend(buttons)
+            pressed = next_state.get(coord)
+            events.extend(get_buttons(pressed))
     return events
 
 
@@ -34,8 +44,6 @@ def _snapshot_from_disk_region(world: State, disk_data: State, disk_coord: tuple
         mono = world.get(w)
         if mono is None:
             # Keep previous disk record when world has no cell.
-            snapshot[rel] = clone_mono(disk_data.get(rel))
-        elif is_solid_value(mono) and mono.reject_save:
             snapshot[rel] = clone_mono(disk_data.get(rel))
         else:
             snapshot[rel] = clone_mono(mono)
@@ -66,9 +74,6 @@ def build_event_writes(state: State, events: list[Event], static_state: StaticSt
                     if value is None:
                         continue
                     world_coord = add_coord(disk_coord, rel)
-                    cur = state.get(world_coord)
-                    if is_solid_value(cur) and cur.reject_load:
-                        continue
                     write[world_coord] = clone_mono(value)
                 if write:
                     writes.append(write)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.state_utils import air_mono, is_empty_value, step_coord
+from src.state_utils import is_empty_value, place_occupant, step_coord, vacate_occupant
 from src.types import Action, Coord, MonoData, State, VALID_ACTIONS
 
 
@@ -47,11 +47,11 @@ def apply_movement(state: State, action: Action) -> State:
             moving_values[src] = mono
 
     next_state = dict(state)
-    for src in moving_values:
-        next_state[src] = air_mono()
+    for src, mono in moving_values.items():
+        next_state[src] = vacate_occupant(mono)
 
     for src, mono in moving_values.items():
         dst = step_coord(src, action)
-        next_state[dst] = mono
+        next_state[dst] = place_occupant(mono, state.get(dst))
 
     return next_state

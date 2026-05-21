@@ -1,6 +1,7 @@
 from src.core_events import build_event_writes, collect_edge_events
 from src.core_step import apply_action
 from src.core_write_commit import commit_writes
+from src.state_utils import air_mono, get_buttons
 from src.types import ButtonData, MonoData, StaticState, TargetData
 
 
@@ -26,12 +27,42 @@ def test_movement_generates_none_outside_map():
 
 
 def test_edge_event_uses_is_empty_only():
-    static_state = StaticState(targets={}, buttons={(0, 0): [ButtonData("s", 1)]})
+    static_state = StaticState(targets={})
+    btn = [ButtonData("s", 1)]
     prev_state = {(0, 0): None}
-    next_state = {(0, 0): box(2)}
+    pressed = box(2)
+    pressed.buttons = btn
+    next_state = {(0, 0): pressed}
     events = collect_edge_events(prev_state, next_state, static_state)
     assert len(events) == 1
     assert events[0].button_type == "s"
+
+
+def test_movement_preserves_buttons_on_cell_not_on_mover():
+    static_state = StaticState(targets={})
+    btn = [ButtonData("l", 1)]
+    state = {
+        (0, 0): player(1),
+        (1, 0): air_mono(btn),
+    }
+    onto_pad = apply_action(state, (1, 0), static_state)
+    assert get_buttons(onto_pad[(1, 0)]) == btn
+    assert onto_pad[(1, 0)] is not None and onto_pad[(1, 0)].is_controllable
+
+    leave_pad = apply_action(onto_pad, (1, 0), static_state)
+    assert get_buttons(leave_pad[(1, 0)]) == btn
+    assert leave_pad[(2, 0)] is not None and leave_pad[(2, 0)].is_controllable
+    assert not get_buttons(leave_pad[(2, 0)])
+
+
+def test_s_disk_snapshot_includes_buttons():
+    disk = MonoData(is_empty=False, is_wall=False, is_controllable=False, color=1, data={(1, 0): None})
+    cell = air_mono([ButtonData("s", 2)])
+    state = {(0, 0): disk, (1, 0): cell}
+    writes = build_event_writes(state, [ButtonData("s", 1)], StaticState(targets={}))
+    new_disk = writes[0][(0, 0)]
+    snap = new_disk.data[(1, 0)]
+    assert snap is not None and get_buttons(snap) == [ButtonData("s", 2)]
 
 
 def test_write_conflict_majority_and_tie():
@@ -72,23 +103,22 @@ def test_s_disk_snapshot_resolves_region_relative_to_disk_cell():
     assert new_disk.data[(1, 0)].color == 5
 
 
-def test_s_disk_snapshot_skips_reject_save_cell():
+def test_s_disk_snapshot_ignores_legacy_reject_save_flag():
     disk = MonoData(is_empty=False, is_wall=False, is_controllable=False, color=1, data={(1, 0): box(5)})
-    no_save = box(9)
-    no_save.reject_save = True
-    state = {(2, 1): disk, (3, 1): no_save}
+    cell = box(9)
+    cell.reject_save = True
+    state = {(2, 1): disk, (3, 1): cell}
     writes = build_event_writes(state, [ButtonData("s", 1)], StaticState(targets={}, buttons={}))
     new_disk = writes[0].get((2, 1))
     assert new_disk is not None and new_disk.data is not None
-    assert new_disk.data[(1, 0)].color == 5
+    assert new_disk.data[(1, 0)].color == 9
 
 
-def test_l_write_skips_reject_load_cell():
-    protected = box(3)
-    protected.reject_load = True
+def test_l_write_ignores_legacy_reject_load_flag():
+    cell = box(3)
+    cell.reject_load = True
     disk = MonoData(is_empty=False, is_wall=False, is_controllable=False, color=1, data={(1, 0): box(8)})
-    state = {(0, 0): disk, (1, 0): protected}
+    state = {(0, 0): disk, (1, 0): cell}
     writes = build_event_writes(state, [ButtonData("l", 1)], StaticState(targets={}, buttons={}))
-    assert writes == []
     out = commit_writes(state, writes)
-    assert out[(1, 0)] is not None and out[(1, 0)].color == 3
+    assert out[(1, 0)] is not None and out[(1, 0)].color == 8

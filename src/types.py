@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal, Optional, TypeAlias
 
 Coord: TypeAlias = tuple[int, int]
@@ -32,8 +32,10 @@ class MonoData:
     is_wall: bool = False
     is_controllable: bool = False
     color: int = 0
+    # Legacy pickle fields; no longer affect S/L.
     reject_save: bool = False
     reject_load: bool = False
+    buttons: list[ButtonData] | None = None
     data: Optional["State"] = None
 
 
@@ -43,10 +45,15 @@ State: TypeAlias = dict[Coord, Optional[MonoData]]
 @dataclass(slots=True)
 class StaticState:
     targets: dict[Coord, TargetData]
-    buttons: dict[Coord, list[ButtonData]]
+    # Legacy pickle only; migrated into initial_state on load.
+    buttons: dict[Coord, list[ButtonData]] = field(default_factory=dict)
+
+
+LEVEL_FORMAT_VERSION = 2
 
 
 @dataclass(slots=True)
 class Level:
     static_state: StaticState
     initial_state: State
+    format_version: int = LEVEL_FORMAT_VERSION

@@ -4,15 +4,22 @@ import pygame
 
 from src.core_step import apply_action
 from src.goals import is_goal
-from src.level_io import save_level_by_stem
+from src.level_io import dump_level_to_pickle, save_level_by_stem
 from src.state_utils import (
     air_mono,
+    append_button,
+    clear_buttons_at,
     clone_mono,
     clone_state,
     clone_static_state,
+    get_buttons,
+    has_buttons,
     is_solid_value,
+    merge_buttons,
     mono_deep_equal,
+    place_occupant,
     sub_coord,
+    vacate_occupant,
 )
 from src.types import Action, ButtonData, Level, MonoData, StaticState, TargetData
 from src.view.level_select import (
@@ -87,18 +94,14 @@ def _save_committed_selection_to_clipboard(ctx: AppCtx) -> None:
         rel = (coord[0] - x0, coord[1] - y0)
         state_sub[rel] = clone_mono(ctx.runtime_state.get(coord))
     targets_sub = {}
-    buttons_sub = {}
     for coord in _iter_rect_coords(x0, y0, x0 + x_len - 1, y0 + y_len - 1):
         rel = (coord[0] - x0, coord[1] - y0)
         if coord in ctx.static_state.targets:
             t = ctx.static_state.targets[coord]
             targets_sub[rel] = TargetData(required_is_controllable=t.required_is_controllable, required_color=t.required_color)
-        if coord in ctx.static_state.buttons:
-            moved = ctx.static_state.buttons[coord]
-            buttons_sub[rel] = [ButtonData(button_type=b.button_type, color=b.color) for b in moved]
 
     key = (x_len, y_len)
-    ctx.clipboard[key] = (state_sub, StaticState(targets=targets_sub, buttons=buttons_sub))
+    ctx.clipboard[key] = (state_sub, StaticState(targets=targets_sub))
     ctx.clipboard_last_key = key
 
 
@@ -138,9 +141,6 @@ def _apply_clipboard_to_selection(ctx: AppCtx, key: tuple[int, int]) -> bool:
     # Ctrl+V static state: overwrite selection area (clear then apply clipboard).
     # Note: The new "skip None/missing" rule only applies to runtime `state`.
     for coord in _iter_rect_coords(x0, y0, x0 + x_len - 1, y0 + y_len - 1):
-        if coord in ctx.static_state.buttons:
-            del ctx.static_state.buttons[coord]
-            changed = True
         if coord in ctx.static_state.targets:
             del ctx.static_state.targets[coord]
             changed = True
@@ -151,10 +151,6 @@ def _apply_clipboard_to_selection(ctx: AppCtx, key: tuple[int, int]) -> bool:
             required_is_controllable=target.required_is_controllable,
             required_color=target.required_color,
         )
-        changed = True
-    for rel, buttons in clip_static.buttons.items():
-        abs_coord = (rel[0] + x0, rel[1] + y0)
-        ctx.static_state.buttons[abs_coord] = [ButtonData(button_type=b.button_type, color=b.color) for b in buttons]
         changed = True
 
     if not changed:
@@ -213,14 +209,15 @@ def _clear_committed_selection(ctx: AppCtx) -> bool:
                 continue
             mono = ctx.runtime_state.get(coord)
             if mono is not None and not mono.is_empty:
-                if not mono_deep_equal(mono, air_mono()):
-                    ctx.runtime_state[coord] = air_mono()
+                vacated = vacate_occupant(mono)
+                if not mono_deep_equal(mono, vacated):
+                    ctx.runtime_state[coord] = vacated
                     changed = True
+            elif mono is not None and has_buttons(mono):
+                clear_buttons_at(ctx.runtime_state, coord)
+                changed = True
 
     for coord in _iter_rect_coords(x0, y0, x1, y1):
-        if coord in ctx.static_state.buttons:
-            del ctx.static_state.buttons[coord]
-            changed = True
         if coord in ctx.static_state.targets:
             del ctx.static_state.targets[coord]
             changed = True
@@ -479,7 +476,6 @@ def _begin_mouse_session(ctx: AppCtx, pos: tuple[int, int], surface: pygame.Surf
                 press_rel = (coord[0] - x0, coord[1] - y0)
                 state_sub = {}
                 targets_sub: dict[tuple[int, int], TargetData] = {}
-                buttons_sub: dict[tuple[int, int], list[ButtonData]] = {}
 
                 for rx in range(x_len):
                     for ry in range(y_len):
@@ -489,16 +485,13 @@ def _begin_mouse_session(ctx: AppCtx, pos: tuple[int, int], surface: pygame.Surf
                         if abs_coord in ctx.static_state.targets:
                             t = ctx.static_state.targets[abs_coord]
                             targets_sub[(rx, ry)] = TargetData(required_is_controllable=t.required_is_controllable, required_color=t.required_color)
-                        if abs_coord in ctx.static_state.buttons:
-                            moved = ctx.static_state.buttons[abs_coord]
-                            buttons_sub[(rx, ry)] = [ButtonData(button_type=b.button_type, color=b.color) for b in moved]
 
                 session.payload = DragPayload(
                     kind="selection",
                     selection_size=(x_len, y_len),
                     selection_press_rel=press_rel,
                     selection_state=state_sub,
-                    selection_static=StaticState(targets=targets_sub, buttons=buttons_sub),
+                    selection_static=StaticState(targets=targets_sub),
                 )
                 ctx.drag_session = session
                 return
@@ -509,12 +502,11 @@ def _begin_mouse_session(ctx: AppCtx, pos: tuple[int, int], surface: pygame.Surf
         if mono is not None and not mono.is_empty:
             session.payload = DragPayload(kind="state", source_coord=coord, state_mono=clone_mono(mono))
         else:
-            buttons = ctx.static_state.buttons.get(coord, [])
-            if buttons:
+            if has_buttons(mono):
                 session.payload = DragPayload(
                     kind="buttons",
                     source_coord=coord,
-                    buttons=[ButtonData(button_type=b.button_type, color=b.color) for b in buttons],
+                    buttons=[ButtonData(button_type=b.button_type, color=b.color) for b in get_buttons(mono)],
                 )
             elif coord in ctx.static_state.targets:
                 target = ctx.static_state.targets[coord]
@@ -551,42 +543,6 @@ def _is_delete_drop(ctx: AppCtx, anchor_pos: tuple[int, int], surface: pygame.Su
     return panel_rect.collidepoint(anchor_pos)
 
 
-def _editor_toggle_reject_flags(ctx: AppCtx, surface: pygame.Surface, *, toggle_save: bool) -> bool:
-    if not ctx.editor_mode or ctx.runtime_state is None or ctx.static_state is None:
-        return False
-    bounds = _get_committed_selection_bounds(ctx)
-    if bounds is not None:
-        x0, y0, x1, y1 = bounds
-        coords = list(_iter_rect_coords(x0, y0, x1, y1))
-    else:
-        world_vp = build_viewport(surface, ctx.runtime_state, EDITOR_RIGHT_PANEL)
-        c = screen_to_world(pygame.mouse.get_pos(), world_vp)
-        if c is None:
-            return False
-        coords = [c]
-
-    old_state = clone_state(ctx.runtime_state) or {}
-    old_static = clone_static_state(ctx.static_state) or ctx.static_state
-    changed = False
-    for coord in coords:
-        mono = ctx.runtime_state.get(coord)
-        if not is_solid_value(mono):
-            continue
-        assert mono is not None
-        if toggle_save:
-            mono.reject_save = not mono.reject_save
-        else:
-            mono.reject_load = not mono.reject_load
-        changed = True
-
-    if changed:
-        _clear_level_saved(ctx)
-        ctx.history_stack.append((old_state, old_static))
-        stop_solver(ctx)
-        _refresh_level_cleared(ctx)
-    return changed
-
-
 def _apply_palette_to_coord(ctx: AppCtx, payload: DragPayload, coord: tuple[int, int]) -> None:
     if ctx.runtime_state is None or ctx.static_state is None or payload.palette_kind is None:
         return
@@ -612,10 +568,10 @@ def _apply_palette_to_coord(ctx: AppCtx, payload: DragPayload, coord: tuple[int,
         )
         return
     if payload.palette_kind == "s_button":
-        ctx.static_state.buttons.setdefault(coord, []).append(ButtonData(button_type="s", color=payload.palette_color))
+        append_button(ctx.runtime_state, coord, ButtonData(button_type="s", color=payload.palette_color))
         return
     if payload.palette_kind == "l_button":
-        ctx.static_state.buttons.setdefault(coord, []).append(ButtonData(button_type="l", color=payload.palette_color))
+        append_button(ctx.runtime_state, coord, ButtonData(button_type="l", color=payload.palette_color))
         return
     if payload.palette_kind == "player_target":
         ctx.static_state.targets[coord] = TargetData(required_is_controllable=True, required_color=0)
@@ -655,10 +611,10 @@ def _editor_delete_at_pos_like_panel(ctx: AppCtx, pos: tuple[int, int], surface:
     old_static = clone_static_state(ctx.static_state) or ctx.static_state
     changed = False
     if mono is not None and not mono.is_empty:
-        ctx.runtime_state[coord] = air_mono()
+        ctx.runtime_state[coord] = vacate_occupant(mono)
         changed = True
-    elif ctx.static_state.buttons.get(coord):
-        del ctx.static_state.buttons[coord]
+    elif has_buttons(mono):
+        clear_buttons_at(ctx.runtime_state, coord)
         changed = True
     elif coord in ctx.static_state.targets:
         del ctx.static_state.targets[coord]
@@ -762,10 +718,12 @@ def _apply_editor_drop(ctx: AppCtx, pos: tuple[int, int], surface: pygame.Surfac
         if is_delete:
             src_mono = ctx.runtime_state.get(src)
             if src_mono is not None:
-                if src_mono.is_empty:
+                if src_mono.is_empty and not has_buttons(src_mono):
                     ctx.runtime_state.pop(src, None)
+                elif src_mono.is_empty:
+                    clear_buttons_at(ctx.runtime_state, src)
                 else:
-                    ctx.runtime_state[src] = air_mono()
+                    ctx.runtime_state[src] = vacate_occupant(src_mono)
                 changed = True
         elif dst is not None:
             src_mono = clone_mono(ctx.runtime_state.get(src))
@@ -773,7 +731,7 @@ def _apply_editor_drop(ctx: AppCtx, pos: tuple[int, int], surface: pygame.Surfac
                 dst_exists = dst in ctx.runtime_state
                 dst_raw = ctx.runtime_state.get(dst)
                 dst_mono = clone_mono(dst_raw)
-                ctx.runtime_state[dst] = src_mono
+                ctx.runtime_state[dst] = place_occupant(src_mono, dst_raw)
                 if src_mono.is_empty:
                     if not dst_exists:
                         ctx.runtime_state.pop(src, None)
@@ -786,20 +744,25 @@ def _apply_editor_drop(ctx: AppCtx, pos: tuple[int, int], surface: pygame.Surfac
                 else:
                     if dst_mono is None:
                         dst_mono = air_mono()
-                    ctx.runtime_state[src] = dst_mono
+                    ctx.runtime_state[src] = place_occupant(dst_mono, src_mono)
                 changed = src != dst
     elif payload.kind == "buttons" and payload.source_coord is not None:
         src = payload.source_coord
         if is_delete:
-            if ctx.static_state.buttons.get(src):
-                del ctx.static_state.buttons[src]
+            if has_buttons(ctx.runtime_state.get(src)):
+                clear_buttons_at(ctx.runtime_state, src)
                 changed = True
         elif dst is not None:
-            src_buttons = ctx.static_state.buttons.get(src, [])
+            src_mono = ctx.runtime_state.get(src)
+            src_buttons = get_buttons(src_mono)
             if src_buttons:
                 moved = [ButtonData(button_type=b.button_type, color=b.color) for b in src_buttons]
-                del ctx.static_state.buttons[src]
-                ctx.static_state.buttons.setdefault(dst, []).extend(moved)
+                clear_buttons_at(ctx.runtime_state, src)
+                dst_mono = ctx.runtime_state.get(dst)
+                if dst_mono is None:
+                    ctx.runtime_state[dst] = air_mono(moved)
+                else:
+                    dst_mono.buttons = merge_buttons(dst_mono.buttons, moved)
                 changed = True
     elif payload.kind == "target" and payload.source_coord is not None and payload.target is not None:
         src = payload.source_coord
@@ -831,9 +794,11 @@ def _save_current_level(ctx: AppCtx) -> None:
         return
     # Persist current runtime_state as the new initial_state.
     ctx.initial_state = clone_state(ctx.runtime_state) or {}
-    level = Level(
-        static_state=clone_static_state(ctx.static_state) or ctx.static_state,
-        initial_state=clone_state(ctx.runtime_state) or {},
+    level = dump_level_to_pickle(
+        Level(
+            static_state=clone_static_state(ctx.static_state) or ctx.static_state,
+            initial_state=clone_state(ctx.runtime_state) or {},
+        )
     )
     if ctx.current_level_idx >= len(ctx.level_names):
         return
@@ -938,14 +903,6 @@ def handle_event(ctx: AppCtx, event: pygame.event.Event, surface: pygame.Surface
             if ctx.editor_mode:
                 _save_current_level(ctx)
             return False
-
-        if ctx.editor_mode:
-            if event.key == pygame.K_LEFTBRACKET:
-                _editor_toggle_reject_flags(ctx, surface, toggle_save=True)
-                return False
-            if event.key == pygame.K_RIGHTBRACKET:
-                _editor_toggle_reject_flags(ctx, surface, toggle_save=False)
-                return False
 
         if ctx.editor_mode:
             bounds = _get_committed_selection_bounds(ctx)
